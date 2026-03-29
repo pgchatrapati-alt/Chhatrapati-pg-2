@@ -1,620 +1,714 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { MONTHS, PG_COLORS, INITIAL_DATA } from './data.js';
 import { useLocalStorage } from './useStorage.js';
 import { pushToSheets, pullFromSheets, pingSheet } from './sync.js';
 
 const COLLECTORS = ['Vishnu', 'Mahendra', 'Cash/other'];
 const ADMIN_PASSWORD = 'admin123';
-const COLLECTOR_COLORS = { Vishnu:'#06b6d4', Mahendra:'#a78bfa', 'Cash/other':'#fb923c' };
 
 function emptyMonthly() {
   const obj = {};
-  MONTHS.forEach(m => { obj[m] = { amount:'', halfFull:'', collector:'', note:'' }; });
+  MONTHS.forEach(m => { obj[m] = { amount: '', halfFull: '', collector: '', note: '' }; });
   return obj;
 }
 function fmtDate(d) {
   if (!d) return '—';
-  try { return new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'}); }
+  try { return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }); }
   catch { return d; }
 }
+function fmtNum(n) { return parseFloat(n || 0).toLocaleString('en-IN'); }
 
-const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{background:#050810;color:#e2e8f0;font-family:'Outfit',sans-serif;-webkit-font-smoothing:antialiased;}
-::-webkit-scrollbar{width:3px;height:3px;}
-::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:#334155;border-radius:4px;}
-select option{background:#0f172a;color:#e2e8f0;}
-@keyframes fadeUp{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
-@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
-@keyframes slideUp{from{transform:translateY(100%);opacity:0;}to{transform:translateY(0);opacity:1;}}
-@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
-@keyframes shimmer{0%{background-position:-200% center;}100%{background-position:200% center;}}
-.fu{animation:fadeUp .35s cubic-bezier(.22,1,.36,1) both;}
-.fi{animation:fadeIn .25s ease both;}
-.su{animation:slideUp .4s cubic-bezier(.22,1,.36,1) both;}
-.ch{transition:transform .18s ease,box-shadow .18s ease;}
-.ch:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.45);}
-.bp:active{transform:scale(.95);opacity:.8;}
-.bp{transition:transform .1s,opacity .1s;}
-.row{transition:background .12s;}
-.row:hover{background:rgba(255,255,255,.025);}
-input:focus,select:focus{outline:none;border-color:#3b82f6!important;box-shadow:0 0 0 3px rgba(59,130,246,.14);}
-.glow{background:linear-gradient(90deg,#fff 0%,#94a3b8 50%,#fff 100%);background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 4s linear infinite;}
-.mb{animation:fadeIn .2s ease;}
-.mc{animation:slideUp .35s cubic-bezier(.22,1,.36,1);}
-`;
-
-function StyleInjector() {
-  useEffect(() => {
-    const el = document.createElement('style');
-    el.textContent = CSS;
-    document.head.appendChild(el);
-    return () => document.head.removeChild(el);
-  }, []);
-  return null;
-}
-
-function Inp({ label, value, onChange, type='text', placeholder='', disabled=false }) {
+function Input({ label, value, onChange, type = 'text', placeholder = '', disabled = false }) {
   return (
-    <div>
-      {label && <div style={{fontSize:10,color:'#64748b',marginBottom:3,fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase'}}>{label}</div>}
-      <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
-        style={{width:'100%',background:'#070d1a',border:'1px solid #1e2d45',color:'#e2e8f0',padding:'7px 10px',borderRadius:8,fontSize:13,boxSizing:'border-box',fontFamily:'Outfit,sans-serif',opacity:disabled?.5:1,cursor:disabled?'not-allowed':'text',transition:'border .2s'}}/>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {label && <div style={S.label}>{label}</div>}
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
+        style={{ ...S.input, opacity: disabled ? 0.5 : 1 }} />
     </div>
   );
 }
-function Sel({ label, value, onChange, options, disabled=false }) {
+function Sel({ label, value, onChange, options, disabled = false }) {
   return (
-    <div>
-      {label && <div style={{fontSize:10,color:'#64748b',marginBottom:3,fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase'}}>{label}</div>}
-      <select value={value} onChange={e=>onChange(e.target.value)} disabled={disabled}
-        style={{width:'100%',background:'#070d1a',border:'1px solid #1e2d45',color:value?'#e2e8f0':'#64748b',padding:'7px 10px',borderRadius:8,fontSize:13,boxSizing:'border-box',fontFamily:'Outfit,sans-serif',opacity:disabled?.5:1,transition:'border .2s'}}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {label && <div style={S.label}>{label}</div>}
+      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ ...S.input, opacity: disabled ? 0.5 : 1 }}>
         <option value="">—</option>
-        {options.map(o=><option key={o} value={o}>{o}</option>)}
+        {options.map(o => <option key={o}>{o}</option>)}
       </select>
     </div>
   );
 }
+function Pill({ children, c = '#94a3b8', bg = '#33415533' }) {
+  return <span style={{ fontSize: 9, background: bg, color: c, padding: '2px 7px', borderRadius: 8, fontWeight: 700 }}>{children}</span>;
+}
 function Toast({ toast }) {
   if (!toast) return null;
-  const bg={error:'linear-gradient(135deg,#ef4444,#dc2626)',warn:'linear-gradient(135deg,#f59e0b,#d97706)',info:'linear-gradient(135deg,#3b82f6,#2563eb)',success:'linear-gradient(135deg,#22c55e,#16a34a)'}[toast.type]||'linear-gradient(135deg,#22c55e,#16a34a)';
-  return <div className="fu" style={{position:'fixed',bottom:28,left:'50%',transform:'translateX(-50%)',background:bg,color:'white',padding:'11px 24px',borderRadius:28,fontWeight:600,fontSize:13,zIndex:600,boxShadow:'0 8px 32px rgba(0,0,0,.5)',whiteSpace:'nowrap',pointerEvents:'none',fontFamily:'Outfit,sans-serif'}}>{toast.msg}</div>;
+  const bg = { error: '#ef4444', warn: '#f59e0b', info: '#3b82f6', success: '#22c55e' }[toast.type] || '#22c55e';
+  return <div style={{ position: 'fixed', bottom: 76, left: '50%', transform: 'translateX(-50%)', background: bg, color: '#fff', padding: '10px 22px', borderRadius: 24, fontWeight: 600, fontSize: 13, zIndex: 600, boxShadow: '0 4px 24px rgba(0,0,0,.5)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>{toast.msg}</div>;
+}
+function MonthBar({ sel, setSel, clr }) {
+  const ref = useRef(null);
+  useEffect(() => { const el = ref.current; if (!el) return; const b = el.querySelector(`[data-m="${sel}"]`); if (b) b.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); }, [sel]);
+  return (
+    <div ref={ref} style={{ display: 'flex', gap: 5, overflowX: 'auto', padding: '8px 14px', background: '#0a0f1e', borderBottom: '1px solid #1e293b', scrollbarWidth: 'none' }}>
+      {MONTHS.map(m => <button key={m} data-m={m} onClick={() => setSel(m)} style={{ padding: '4px 11px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', background: sel === m ? clr : '#111827', color: sel === m ? '#fff' : '#64748b', boxShadow: sel === m ? `0 0 8px ${clr}66` : 'none' }}>{m.slice(0, 3)}</button>)}
+    </div>
+  );
 }
 
 function LoginScreen({ onLogin }) {
   const [mode, setMode] = useState(null);
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
-  function handleAdmin() {
-    if (pw === ADMIN_PASSWORD) { onLogin('admin'); }
-    else { setErr('Wrong password!'); setTimeout(()=>setErr(''),1500); }
+  function tryLogin() {
+    if (pw === ADMIN_PASSWORD) onLogin('admin');
+    else { setErr('Galat password!'); setTimeout(() => setErr(''), 2000); }
   }
+  if (!mode) return (
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#0a0f1e,#111827)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 }}>
+      <div style={{ fontSize: 56 }}>🏠</div>
+      <div style={{ fontSize: 24, fontWeight: 800, color: '#f8fafc' }}>PG Manager</div>
+      <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>Login karein</div>
+      <button onClick={() => setMode('admin')} style={S.bigBtn('#6366f1')}>🔐 Admin Login</button>
+      <button onClick={() => onLogin('viewer')} style={S.bigBtn('#1e293b', '#94a3b8')}>👁 Sirf Dekhna Hai</button>
+    </div>
+  );
   return (
-    <div style={{minHeight:'100vh',background:'radial-gradient(ellipse at 50% 0%,#0f2040 0%,#050810 60%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,fontFamily:'Outfit,sans-serif'}}>
-      <div style={{position:'fixed',inset:0,backgroundImage:'radial-gradient(circle at 20% 80%,#1e3a5f22 0%,transparent 50%),radial-gradient(circle at 80% 20%,#0e4d3322 0%,transparent 50%)',pointerEvents:'none'}}/>
-      <div className="fu" style={{textAlign:'center',position:'relative',zIndex:1,width:'100%',maxWidth:340}}>
-        <div style={{fontSize:52,marginBottom:10,filter:'drop-shadow(0 0 20px rgba(56,189,248,.3))'}}>🏠</div>
-        <div className="glow" style={{fontSize:28,fontWeight:900,marginBottom:4}}>PG Manager</div>
-        <div style={{fontSize:13,color:'#475569',marginBottom:36}}>Apna role chuniye</div>
-        {!mode ? (
-          <div style={{display:'flex',flexDirection:'column',gap:12}}>
-            <button className="bp ch" onClick={()=>setMode('admin')} style={{background:'linear-gradient(135deg,#3b82f6,#6366f1)',border:'none',color:'#fff',padding:'14px 32px',borderRadius:14,fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'Outfit,sans-serif',boxShadow:'0 4px 20px rgba(99,102,241,.4)'}}>🔐 Admin Login</button>
-            <button className="bp ch" onClick={()=>onLogin('viewer')} style={{background:'#111827',border:'1px solid #1e2d45',color:'#94a3b8',padding:'14px 32px',borderRadius:14,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'Outfit,sans-serif'}}>👁 Viewer Mode</button>
-          </div>
-        ) : (
-          <div className="fi" style={{display:'flex',flexDirection:'column',gap:12}}>
-            <input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAdmin()} placeholder="Password daalo…" autoFocus
-              style={{background:'#0a0f1e',border:`1px solid ${err?'#ef4444':'#1e2d45'}`,color:'#e2e8f0',padding:'13px 18px',borderRadius:12,fontSize:15,textAlign:'center',fontFamily:'Outfit,sans-serif',outline:'none',transition:'border .2s'}}/>
-            {err && <div style={{color:'#ef4444',fontSize:13,fontWeight:600}}>{err}</div>}
-            <div style={{display:'flex',gap:8}}>
-              <button className="bp ch" onClick={handleAdmin} style={{flex:1,background:'linear-gradient(135deg,#3b82f6,#6366f1)',border:'none',color:'#fff',padding:'12px',borderRadius:12,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'Outfit,sans-serif'}}>Login</button>
-              <button className="bp" onClick={()=>{setMode(null);setPw('');}} style={{background:'#111827',border:'1px solid #1e2d45',color:'#64748b',padding:'12px 16px',borderRadius:12,fontSize:14,cursor:'pointer',fontFamily:'Outfit,sans-serif'}}>←</button>
-            </div>
-          </div>
-        )}
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#0a0f1e,#111827)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 }}>
+      <div style={{ fontSize: 40 }}>🔐</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>Admin Password</div>
+      <input type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && tryLogin()}
+        placeholder="Password daalo…" autoFocus style={{ ...S.input, width: '100%', maxWidth: 280, fontSize: 15, padding: '11px 14px', textAlign: 'center', borderRadius: 12 }} />
+      {err && <div style={{ color: '#ef4444', fontSize: 13, fontWeight: 600 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={tryLogin} style={S.bigBtn('#6366f1', '#fff', '10px 28px')}>Login</button>
+        <button onClick={() => { setMode(null); setPw(''); }} style={S.bigBtn('#1e293b', '#94a3b8', '10px 20px')}>Back</button>
       </div>
     </div>
   );
 }
 
-export default function App() {
-  const [pgData,setPgData] = useLocalStorage('pgData',INITIAL_DATA);
-  const [webAppUrl,setWebAppUrl] = useLocalStorage('webAppUrl','');
-  const [lastSync,setLastSync] = useLocalStorage('lastSync','');
-  const [userRole,setUserRole] = useLocalStorage('userRole',null);
+function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) {
+  const [form, setForm] = useState({ ...tenant });
+  const [monthly, setMonthly] = useState(JSON.parse(JSON.stringify(tenant.monthly || emptyMonthly())));
+  const [tab, setTab] = useState('info');
+  const setM = (m, f, v) => setMonthly(p => ({ ...p, [m]: { ...p[m], [f]: v } }));
+  const totalPaid = MONTHS.reduce((s, m) => s + (parseFloat(monthly[m]?.amount) || 0), 0);
+  const isActive = !tenant.dateLeaving || new Date(tenant.dateLeaving) >= new Date();
 
-  const [selectedPG,setSelectedPG] = useState(Object.keys(pgData)[0]);
-  const [selectedMonth,setSelectedMonth] = useState(MONTHS[new Date().getMonth()]);
-  const [view,setView] = useState('overview');
-  const [activePGDetail,setActivePGDetail] = useState(null);
-  const [search,setSearch] = useState('');
-  const [toast,setToast] = useState(null);
-  const [syncStatus,setSyncStatus] = useState('idle');
-  const [showSettings,setShowSettings] = useState(false);
-  const [showAddTenant,setShowAddTenant] = useState(false);
-  const [editingTenant,setEditingTenant] = useState(null);
-  const [editForm,setEditForm] = useState({});
-  const [editMonthly,setEditMonthly] = useState({});
-  const [newTenant,setNewTenant] = useState({name:'',contact:'',deposit:'',rent:'',dateJoining:'',dateLeaving:'',note:''});
-  const [urlDraft,setUrlDraft] = useState(webAppUrl);
-  const isAdmin = userRole==='admin';
-
-  const showToast = useCallback((msg,type='success')=>{ setToast({msg,type}); setTimeout(()=>setToast(null),3500); },[]);
-  const markSync = () => { const n=new Date().toLocaleString('en-IN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'}); setLastSync(n); };
-
-  const doPush = async (data,silent=false) => {
-    if (!webAppUrl){if(!silent)showToast('Web App URL daalo','warn');return false;}
-    setSyncStatus('syncing');
-    const res = await pushToSheets(webAppUrl,data);
-    if (res.success){markSync();setSyncStatus('ok');if(!silent)showToast('✅ Sheet update ho gaya!');setTimeout(()=>setSyncStatus('idle'),3000);return true;}
-    else{setSyncStatus('error');if(!silent)showToast('Sync failed: '+res.error,'error');setTimeout(()=>setSyncStatus('idle'),4000);return false;}
-  };
-  const doPull = async () => {
-    if(!webAppUrl){showToast('Web App URL daalo','warn');return;}
-    setSyncStatus('syncing');showToast('Sheet se data la raha hoon…','info');
-    const res = await pullFromSheets(webAppUrl);
-    if(res.success&&res.data){const m={...pgData};Object.keys(res.data).forEach(pg=>{if(res.data[pg]?.length>0)m[pg]=res.data[pg];});setPgData(m);markSync();setSyncStatus('ok');showToast('✅ Latest data aa gaya!');setTimeout(()=>setSyncStatus('idle'),3000);}
-    else{setSyncStatus('error');showToast('Pull failed: '+(res.error||'?'),'error');setTimeout(()=>setSyncStatus('idle'),4000);}
-  };
-  const doTest = async () => {
-    if(!webAppUrl){showToast('Pehle URL daalo','warn');return;}
-    setSyncStatus('syncing');
-    const res=await pingSheet(webAppUrl);
-    if(res.success){setSyncStatus('ok');showToast('✅ Connected!');setTimeout(()=>setSyncStatus('idle'),3000);}
-    else{setSyncStatus('error');showToast('❌ '+res.error,'error');setTimeout(()=>setSyncStatus('idle'),4000);}
-  };
-
-  const allPGs = Object.keys(pgData);
-  const tenants = pgData[selectedPG]||[];
-  const filtered = tenants.filter(t=>t.name.toLowerCase().includes(search.toLowerCase())||t.contact?.includes(search));
-  const active = tenants.filter(t=>!t.dateLeaving||new Date(t.dateLeaving)>=new Date());
-  const collected = tenants.reduce((s,t)=>s+(parseFloat(t.monthly?.[selectedMonth]?.amount)||0),0);
-  const allTenants = Object.values(pgData).flat();
-  const grandTotal = allTenants.reduce((s,t)=>s+(parseFloat(t.monthly?.[selectedMonth]?.amount)||0),0);
-  const grandActive = allTenants.filter(t=>!t.dateLeaving||new Date(t.dateLeaving)>=new Date());
-  const grandPending = grandActive.filter(t=>(parseFloat(t.monthly?.[selectedMonth]?.amount)||0)<(parseFloat(t.rent)||0)).length;
-
-  const pgStats = allPGs.map(pg=>{
-    const ts=pgData[pg]||[];
-    const act=ts.filter(t=>!t.dateLeaving||new Date(t.dateLeaving)>=new Date());
-    const col=ts.reduce((s,t)=>s+(parseFloat(t.monthly?.[selectedMonth]?.amount)||0),0);
-    const pend=act.filter(t=>(parseFloat(t.monthly?.[selectedMonth]?.amount)||0)<(parseFloat(t.rent)||0)).length;
-    return {pg,col,pend,active:act.length,color:PG_COLORS[pg]||'#6366f1'};
-  });
-
-  // Collectors: rent received per month per collector (all PGs)
-  const collectorStats = (() => {
-    const s={};
-    COLLECTORS.forEach(c=>{s[c]={months:{}};MONTHS.forEach(m=>{s[c].months[m]=0;});});
-    allTenants.forEach(t=>{
-      MONTHS.forEach(m=>{
-        const md=t.monthly?.[m];
-        if(!md?.collector||!md?.amount)return;
-        const amt=parseFloat(md.amount)||0;
-        const k=md.collector;
-        if(!s[k]){s[k]={months:{}};MONTHS.forEach(mm=>{s[k].months[mm]=0;});}
-        s[k].months[m]=(s[k].months[m]||0)+amt;
-      });
-    });
-    return s;
-  })();
-
-  const pgColor = PG_COLORS[selectedPG]||'#6366f1';
-  const syncDot = {idle:'#334155',syncing:'#f59e0b',ok:'#22c55e',error:'#ef4444'}[syncStatus];
-
-  function getRentStatus(t,month){
-    const paid=parseFloat(t.monthly?.[month]?.amount)||0;
-    const rent=parseFloat(t.rent)||0;
-    const hf=t.monthly?.[month]?.halfFull||'';
-    if(paid===0)return{label:'Not Paid',color:'#ef4444',bg:'#ef444418',isPending:true};
-    if(paid<rent||hf==='Half')return{label:`Half Paid ₹${paid.toLocaleString()}`,color:'#f59e0b',bg:'#f59e0b18',isPending:true};
-    return{label:`₹${paid.toLocaleString()}`,color:'#22c55e',bg:'#22c55e18',isPending:false};
-  }
-
-  function openEdit(tenant){ if(!isAdmin&&view!=='tenants'&&view!=='pg_detail')return; setEditingTenant(tenant);setEditForm({...tenant});setEditMonthly(JSON.parse(JSON.stringify(tenant.monthly||emptyMonthly()))); }
-
-  async function saveEdit(){
-    const pg=activePGDetail||selectedPG;
-    const key=editingTenant.name+editingTenant.dateJoining;
-    const updated=pgData[pg].map(t=>(t.name+t.dateJoining)===key?{...editForm,monthly:editMonthly}:t);
-    const nd={...pgData,[pg]:updated};
-    setPgData(nd);setEditingTenant(null);showToast('Saving…','info');await doPush(nd);
-  }
-  async function addTenant(){
-    if(!newTenant.name.trim())return showToast('Naam zaroor daalo','error');
-    const tenant={...newTenant,monthly:emptyMonthly()};
-    const nd={...pgData,[selectedPG]:[...(pgData[selectedPG]||[]),tenant]};
-    setPgData(nd);setNewTenant({name:'',contact:'',deposit:'',rent:'',dateJoining:'',dateLeaving:'',note:''});
-    setShowAddTenant(false);showToast('Tenant add ho gaya!','success');await doPush(nd);
-  }
-  function doCall(contact,e){ e.stopPropagation();if(!contact)return showToast('Contact nahi hai','warn');window.open(`tel:${contact.replace(/\s/g,'')}`);}
-  function doWhatsApp(contact,name,e){
-    e.stopPropagation();if(!contact)return showToast('Contact nahi hai','warn');
-    const num=contact.replace(/\s/g,'');
-    const msg=encodeURIComponent(`Namaste ${name}! 🏠 PG rent reminder — is month ka rent jama karein. Dhanyawad!`);
-    window.open(`https://wa.me/91${num}?text=${msg}`,'_blank');
-  }
-
-  if(!userRole)return(<><StyleInjector/><LoginScreen onLogin={r=>setUserRole(r)}/></>);
-
-  // ── Edit Modal ─────────────────────────────────────────────
-  function EditModal(){
-    if(!editingTenant)return null;
-    const pg=activePGDetail||selectedPG;
-    const pgC=PG_COLORS[pg]||'#6366f1';
-    return(
-      <div className="mb" style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center',backdropFilter:'blur(4px)'}} onClick={e=>{if(e.target===e.currentTarget)setEditingTenant(null);}}>
-        <div className="mc" style={{background:'linear-gradient(180deg,#0d1626,#070d1a)',width:'100%',maxWidth:620,borderRadius:'20px 20px 0 0',maxHeight:'92vh',overflowY:'auto',padding:'20px 18px 32px',border:'1px solid #1e2d45',borderBottom:'none'}}>
-          <div style={{width:36,height:4,background:'#1e2d45',borderRadius:4,margin:'0 auto 18px'}}/>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18}}>
-            <div>
-              <div style={{fontWeight:800,fontSize:20}}>{editingTenant.name}</div>
-              <div style={{fontSize:11,color:'#475569',marginTop:2}}>Joined: {fmtDate(editingTenant.dateJoining)} • {pg}</div>
-            </div>
-            <div style={{display:'flex',gap:6,alignItems:'center'}}>
-              {!isAdmin&&<span style={{fontSize:9,background:'#3b82f622',color:'#3b82f6',padding:'3px 8px',borderRadius:20,border:'1px solid #3b82f633',fontWeight:700}}>👁 VIEW</span>}
-              {editForm.contact&&<><button className="bp" onClick={e=>doCall(editForm.contact,e)} style={{background:'#22c55e18',border:'1px solid #22c55e33',color:'#22c55e',padding:'6px 10px',borderRadius:8,cursor:'pointer',fontSize:13}}>📞</button><button className="bp" onClick={e=>doWhatsApp(editForm.contact,editingTenant.name,e)} style={{background:'#25d36618',border:'1px solid #25d36633',color:'#25d366',padding:'6px 10px',borderRadius:8,cursor:'pointer',fontSize:13}}>💬</button></>}
-              <button className="bp" onClick={()=>setEditingTenant(null)} style={{background:'#1e2d45',border:'1px solid #334155',color:'#94a3b8',padding:'6px 10px',borderRadius:8,cursor:'pointer',fontSize:13}}>✕</button>
-            </div>
+  return (
+    <div style={S.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={S.modal}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 17 }}>{tenant.name}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>{selectedPG} • {isActive ? '🟢 Active' : '🔴 Left'} • Joined {fmtDate(tenant.dateJoining)}</div>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
-            <Inp label="Contact" value={editForm.contact||''} onChange={v=>setEditForm(p=>({...p,contact:v}))} disabled={!isAdmin}/>
-            <Inp label="Deposit ₹" value={editForm.deposit||''} onChange={v=>setEditForm(p=>({...p,deposit:v}))} disabled={!isAdmin}/>
-            <Inp label="Rent ₹/mo" value={editForm.rent||''} onChange={v=>setEditForm(p=>({...p,rent:v}))} disabled={!isAdmin}/>
-            <Inp label="Note" value={editForm.note||''} onChange={v=>setEditForm(p=>({...p,note:v}))} disabled={!isAdmin}/>
-            <Inp label="Joining" type="date" value={editForm.dateJoining||''} onChange={v=>setEditForm(p=>({...p,dateJoining:v}))} disabled={!isAdmin}/>
-            <Inp label="Leaving" type="date" value={editForm.dateLeaving||''} onChange={v=>setEditForm(p=>({...p,dateLeaving:v}))} disabled={!isAdmin}/>
-          </div>
-          <div style={{fontSize:10,color:'#475569',fontWeight:700,letterSpacing:'.08em',margin:'16px 0 8px'}}>MONTHLY PAYMENTS</div>
-          {MONTHS.map(m=>{
-            const md=editMonthly[m]||{amount:'',halfFull:'',collector:'',note:''};
-            const set=(f,v)=>setEditMonthly(p=>({...p,[m]:{...md,[f]:v}}));
-            const paid=parseFloat(md.amount)||0;const rent=parseFloat(editForm.rent)||0;
-            const ac=paid===0?'#1e2d45':paid<rent?'#f59e0b':pgC;
-            return(
-              <div key={m} style={{marginBottom:8,background:'#070d1a',borderRadius:10,padding:'10px 12px',border:`1px solid ${paid>0?ac+'55':'#1e2d45'}`,transition:'border .2s'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                  <div style={{fontWeight:700,fontSize:13,color:paid>0?ac:'#475569'}}>{m}</div>
-                  {paid>0&&<div style={{fontSize:10,color:paid<rent?'#f59e0b':'#22c55e',fontWeight:700,background:(paid<rent?'#f59e0b':'#22c55e')+'18',padding:'2px 8px',borderRadius:20}}>{paid<rent?'Half':'Full'} • ₹{paid.toLocaleString()}</div>}
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6}}>
-                  <Inp label="₹ Amount" value={md.amount} onChange={v=>set('amount',v)} disabled={!isAdmin}/>
-                  <Sel label="Half/Full" value={md.halfFull} onChange={v=>set('halfFull',v)} options={['Full','Half']} disabled={!isAdmin}/>
-                  <Sel label="Collector" value={md.collector} onChange={v=>set('collector',v)} options={COLLECTORS} disabled={!isAdmin}/>
-                  <Inp label="Note" value={md.note} onChange={v=>set('note',v)} disabled={!isAdmin}/>
-                </div>
-              </div>
-            );
-          })}
-          <div style={{display:'flex',gap:8,marginTop:18}}>
-            {isAdmin
-              ?<button className="bp ch" onClick={saveEdit} style={{flex:1,background:`linear-gradient(135deg,${pgC},${pgC}cc)`,border:'none',color:'#fff',padding:'13px',borderRadius:12,cursor:'pointer',fontWeight:700,fontSize:15,fontFamily:'Outfit,sans-serif',boxShadow:`0 4px 20px ${pgC}44`}}>💾 Save + Sync</button>
-              :<div style={{flex:1,textAlign:'center',fontSize:13,color:'#475569',padding:'13px',background:'#070d1a',borderRadius:12}}>👁 Viewer — edit allowed nahi</div>}
-            <button className="bp" onClick={()=>setEditingTenant(null)} style={{background:'#111827',border:'1px solid #1e2d45',color:'#64748b',padding:'13px 16px',borderRadius:12,cursor:'pointer',fontFamily:'Outfit,sans-serif'}}>Close</button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {!isAdmin && <Pill c="#3b82f6" bg="#3b82f622">👁 View</Pill>}
+            <button onClick={onClose} style={{ ...S.ghostBtn, fontSize: 15, padding: '4px 10px' }}>✕</button>
           </div>
         </div>
-      </div>
-    );
-  }
 
-  // ── PG Detail ───────────────────────────────────────────────
-  if(view==='pg_detail'&&activePGDetail){
-    const pgTs=pgData[activePGDetail]||[];
-    const dc=PG_COLORS[activePGDetail]||'#6366f1';
-    const pgAct=pgTs.filter(t=>!t.dateLeaving||new Date(t.dateLeaving)>=new Date());
-    const pgCol=pgTs.reduce((s,t)=>s+(parseFloat(t.monthly?.[selectedMonth]?.amount)||0),0);
-    return(<>
-      <StyleInjector/>
-      <div style={{minHeight:'100vh',background:'#050810',fontFamily:'Outfit,sans-serif'}}>
-        <div style={{background:`linear-gradient(135deg,${dc}22,#0d1626)`,borderBottom:'1px solid #1e2d45',padding:'12px 16px',display:'flex',alignItems:'center',gap:10,position:'sticky',top:0,zIndex:100,backdropFilter:'blur(12px)'}}>
-          <button className="bp" onClick={()=>{setView('overview');setActivePGDetail(null);}} style={{background:'#111827',border:'1px solid #1e2d45',color:'#94a3b8',padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:13,fontFamily:'Outfit,sans-serif'}}>← Back</button>
-          <div style={{width:9,height:9,borderRadius:'50%',background:dc,boxShadow:`0 0 10px ${dc}`}}/>
-          <span style={{fontSize:18,fontWeight:800,color:dc}}>{activePGDetail}</span>
-          <div style={{flex:1}}/>
-          {isAdmin&&<button className="bp ch" onClick={()=>{setSelectedPG(activePGDetail);setShowAddTenant(true);setView('tenants');}} style={{background:`linear-gradient(135deg,${dc},${dc}aa)`,border:'none',color:'#fff',padding:'7px 14px',borderRadius:10,cursor:'pointer',fontSize:13,fontWeight:700,fontFamily:'Outfit,sans-serif'}}>+ Add Tenant</button>}
-        </div>
-        <div style={{padding:'8px 14px',display:'flex',gap:5,overflowX:'auto',background:'#0a0f1e',borderBottom:'1px solid #1e2d45'}}>
-          {MONTHS.map(m=>(
-            <button key={m} className="bp" onClick={()=>setSelectedMonth(m)} style={{padding:'4px 10px',borderRadius:20,border:`1px solid ${selectedMonth===m?'transparent':'#1e2d45'}`,background:selectedMonth===m?dc:'#111827',color:selectedMonth===m?'#fff':'#64748b',cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif',whiteSpace:'nowrap',transition:'all .18s'}}>
-              {m.slice(0,3)}
-            </button>
+        {/* Summary Strip */}
+        <div style={{ display: 'flex', gap: 1, marginBottom: 14, background: '#0a0f1e', borderRadius: 12, overflow: 'hidden' }}>
+          {[
+            { label: 'Total Paid', val: `₹${fmtNum(totalPaid)}`, c: '#22c55e' },
+            { label: 'Monthly Rent', val: `₹${fmtNum(form.rent)}`, c: pgColor },
+            { label: 'Deposit', val: form.deposit ? `₹${fmtNum(form.deposit)}` : '⚠ Pending', c: form.deposit ? '#f8fafc' : '#ef4444' },
+          ].map((x, i) => (
+            <div key={i} style={{ flex: 1, textAlign: 'center', padding: '10px 6px', borderRight: i < 2 ? '1px solid #1e293b' : 'none' }}>
+              <div style={{ fontSize: 10, color: '#64748b' }}>{x.label}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: x.c }}>{x.val}</div>
+            </div>
           ))}
         </div>
-        <div style={{padding:'14px 16px',maxWidth:900,margin:'0 auto'}}>
-          <div className="fu" style={{background:`linear-gradient(135deg,${dc}18,#0d1626)`,border:`1px solid ${dc}33`,borderRadius:16,padding:'16px 20px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div><div style={{fontSize:10,color:'#475569',fontWeight:700,letterSpacing:'.06em'}}>{selectedMonth.toUpperCase()} COLLECTION</div><div style={{fontSize:30,fontWeight:900,color:dc,fontFamily:'JetBrains Mono,monospace'}}>₹{pgCol.toLocaleString()}</div></div>
-            <div style={{textAlign:'right'}}><div style={{fontSize:10,color:'#475569',fontWeight:600}}>ACTIVE</div><div style={{fontSize:24,fontWeight:800}}>{pgAct.length}</div></div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: '#0a0f1e', borderRadius: 10, padding: 4 }}>
+          {[['info', '📋 Info'], ['monthly', '📅 Payments']].map(([t, lbl]) => (
+            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: tab === t ? pgColor : 'transparent', color: tab === t ? '#fff' : '#64748b' }}>{lbl}</button>
+          ))}
+        </div>
+
+        {tab === 'info' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Input label="Contact" value={form.contact || ''} onChange={v => setForm(p => ({ ...p, contact: v }))} disabled={!isAdmin} />
+              <Input label="Deposit ₹" value={form.deposit || ''} onChange={v => setForm(p => ({ ...p, deposit: v }))} disabled={!isAdmin} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Input label="Rent ₹/mo" value={form.rent || ''} onChange={v => setForm(p => ({ ...p, rent: v }))} disabled={!isAdmin} />
+              <Input label="Note" value={form.note || ''} onChange={v => setForm(p => ({ ...p, note: v }))} disabled={!isAdmin} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Input label="Date Joining" type="date" value={form.dateJoining || ''} onChange={v => setForm(p => ({ ...p, dateJoining: v }))} disabled={!isAdmin} />
+              <Input label="Date Leaving" type="date" value={form.dateLeaving || ''} onChange={v => setForm(p => ({ ...p, dateLeaving: v }))} disabled={!isAdmin} />
+            </div>
           </div>
-          {pgTs.map((t,i)=>{
-            const isActive=!t.dateLeaving||new Date(t.dateLeaving)>=new Date();
-            const status=getRentStatus(t,selectedMonth);
-            return(
-              <div key={t.name+t.dateJoining} className="ch fu row" onClick={()=>{setSelectedPG(activePGDetail);openEdit(t);}} style={{background:'linear-gradient(135deg,#0d1626,#0a0f1e)',borderRadius:14,padding:'14px 16px',border:`1px solid ${status.isPending&&isActive?'#ef444422':'#1e2d45'}`,cursor:isAdmin?'pointer':'default',marginBottom:8,animationDelay:`${i*40}ms`}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:700,fontSize:16,color:isActive?'#f1f5f9':'#475569'}}>{t.name}{!isActive&&<span style={{fontSize:9,background:'#334155',color:'#64748b',padding:'2px 6px',borderRadius:20,marginLeft:6}}>Left</span>}</div>
-                    <div style={{fontSize:11,color:'#475569',marginTop:3}}>Joined: {fmtDate(t.dateJoining)} • ₹{t.rent||'—'}/mo {t.deposit&&`• Dep: ₹${t.deposit}`}</div>
-                    {t.contact&&<div style={{display:'flex',gap:6,marginTop:8}}>
-                      <button className="bp" onClick={e=>doCall(t.contact,e)} style={{background:'#22c55e18',border:'1px solid #22c55e33',color:'#22c55e',padding:'4px 10px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif'}}>📞 Call</button>
-                      <button className="bp" onClick={e=>doWhatsApp(t.contact,t.name,e)} style={{background:'#25d36618',border:'1px solid #25d36633',color:'#25d366',padding:'4px 10px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif'}}>💬 WhatsApp</button>
-                    </div>}
+        )}
+
+        {tab === 'monthly' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {MONTHS.map(m => {
+              const md = monthly[m] || { amount: '', halfFull: '', collector: '', note: '' };
+              const paid = parseFloat(md.amount) || 0;
+              const rent = parseFloat(form.rent) || 0;
+              const tc = paid === 0 ? '#475569' : paid < rent ? '#f59e0b' : pgColor;
+              const borderClr = paid === 0 ? '#1e293b' : paid < rent ? '#f59e0b44' : `${pgColor}44`;
+              return (
+                <div key={m} style={{ background: '#0a0f1e', borderRadius: 10, padding: '10px 12px', border: `1px solid ${borderClr}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: isAdmin ? 8 : 0 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: tc }}>{m}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: tc }}>
+                      {paid > 0 ? `₹${fmtNum(paid)}${paid < rent ? ' (Half)' : ' ✓'}` : 'Not Paid'}
+                    </span>
                   </div>
-                  <div style={{textAlign:'right',marginLeft:12}}>
-                    <div style={{fontWeight:700,fontSize:12,color:status.color,background:status.bg,padding:'4px 10px',borderRadius:20}}>{status.label}</div>
-                    {t.monthly?.[selectedMonth]?.collector&&<div style={{fontSize:10,color:'#475569',marginTop:4}}>{t.monthly[selectedMonth].collector}</div>}
-                  </div>
+                  {isAdmin && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <Input label="₹ Amount" value={md.amount} onChange={v => setM(m, 'amount', v)} />
+                      <Sel label="Half/Full" value={md.halfFull} onChange={v => setM(m, 'halfFull', v)} options={['Full', 'Half']} />
+                      <Sel label="Collector" value={md.collector} onChange={v => setM(m, 'collector', v)} options={COLLECTORS} />
+                      <Input label="Note" value={md.note} onChange={v => setM(m, 'note', v)} />
+                    </div>
+                  )}
+                  {!isAdmin && paid > 0 && <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{[md.collector, md.note].filter(Boolean).join(' • ')}</div>}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '1px solid #1e293b' }}>
+          {isAdmin
+            ? <button onClick={() => onSave({ ...form, monthly })} style={{ flex: 1, background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>💾 Save + Auto Sync</button>
+            : <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: '#64748b', padding: 12 }}>👁 Viewer mode</div>
+          }
+          <button onClick={onClose} style={S.ghostBtn}>Close</button>
         </div>
       </div>
-      <EditModal/><Toast toast={toast}/>
-    </>);
+    </div>
+  );
+}
+
+// ═══ MAIN APP ═══
+export default function App() {
+  const [pgData, setPgData] = useLocalStorage('pgData', INITIAL_DATA);
+  const [webAppUrl, setWebAppUrl] = useLocalStorage('webAppUrl', '');
+  const [lastSync, setLastSync] = useLocalStorage('lastSync', '');
+  const [userRole, setUserRole] = useLocalStorage('userRole', null);
+  const [selectedPG, setSelectedPG] = useState(Object.keys(pgData)[0]);
+  const [selectedMonth, setSelectedMonth] = useState(MONTHS[new Date().getMonth()]);
+  const [view, setView] = useState('dashboard');
+  const [search, setSearch] = useState('');
+  const [toast, setToast] = useState(null);
+  const [syncStatus, setSyncStatus] = useState('idle');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showAddTenant, setShowAddTenant] = useState(false);
+  const [editingTenant, setEditingTenant] = useState(null);
+  const [urlDraft, setUrlDraft] = useState(webAppUrl);
+  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
+  const [pendingTab, setPendingTab] = useState('rent');
+
+  const isAdmin = userRole === 'admin';
+  const showToast = useCallback((msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
+  const markSync = () => setLastSync(new Date().toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }));
+
+  const doPush = useCallback(async (data, silent = false) => {
+    if (!webAppUrl) { if (!silent) showToast('Settings mein Web App URL daalo', 'warn'); return false; }
+    setSyncStatus('syncing');
+    if (!silent) showToast('⏳ Syncing to Google Sheet…', 'info');
+    const res = await pushToSheets(webAppUrl, data);
+    if (res.success) { markSync(); setSyncStatus('ok'); if (!silent) showToast('✅ Google Sheet updated!'); setTimeout(() => setSyncStatus('idle'), 4000); return true; }
+    else { setSyncStatus('error'); showToast('❌ Sync failed: ' + res.error, 'error'); setTimeout(() => setSyncStatus('idle'), 5000); return false; }
+  }, [webAppUrl, showToast]);
+
+  const doPull = async () => {
+    if (!webAppUrl) { showToast('Settings mein URL daalo', 'warn'); return; }
+    setSyncStatus('syncing'); showToast('⬇ Sheet se data la raha hoon…', 'info');
+    const res = await pullFromSheets(webAppUrl);
+    if (res.success && res.data) {
+      const merged = { ...pgData };
+      Object.keys(res.data).forEach(pg => { if (res.data[pg]?.length > 0) merged[pg] = res.data[pg]; });
+      setPgData(merged); markSync(); setSyncStatus('ok'); showToast('✅ Sheet se data aa gaya!');
+      setTimeout(() => setSyncStatus('idle'), 4000);
+    } else { setSyncStatus('error'); showToast('❌ ' + (res.error || 'Pull failed'), 'error'); setTimeout(() => setSyncStatus('idle'), 5000); }
+  };
+
+  const doTest = async () => {
+    if (!webAppUrl) { showToast('URL daalo pehle', 'warn'); return; }
+    setSyncStatus('syncing');
+    const res = await pingSheet(webAppUrl);
+    if (res.success) { setSyncStatus('ok'); showToast('✅ Connected!'); setTimeout(() => setSyncStatus('idle'), 4000); }
+    else { setSyncStatus('error'); showToast('❌ ' + res.error, 'error'); setTimeout(() => setSyncStatus('idle'), 5000); }
+  };
+
+  const tenants = pgData[selectedPG] || [];
+  const allTenants = Object.values(pgData).flat();
+  const active = tenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
+  const filtered = tenants.filter(t => t.name.toLowerCase().includes(search.toLowerCase()) || (t.contact || '').includes(search));
+  const totalRent = active.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
+  const collected = tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
+  const grandTotal = allTenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
+  const rentPending = active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) < (parseFloat(t.rent) || 0));
+  const depositPending = active.filter(t => !t.deposit || t.deposit === '' || t.deposit === '0');
+  const halfPaid = active.filter(t => { const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0; const r = parseFloat(t.rent) || 0; return p > 0 && p < r; });
+
+  const collectorTotals = (() => {
+    const totals = {};
+    COLLECTORS.forEach(c => { totals[c] = {}; MONTHS.forEach(m => { totals[c][m] = 0; }); });
+    allTenants.forEach(t => MONTHS.forEach(m => {
+      const md = t.monthly?.[m];
+      if (md?.collector && md?.amount) {
+        if (!totals[md.collector]) { totals[md.collector] = {}; MONTHS.forEach(mm => { totals[md.collector][mm] = 0; }); }
+        totals[md.collector][m] = (totals[md.collector][m] || 0) + (parseFloat(md.amount) || 0);
+      }
+    }));
+    return totals;
+  })();
+
+  const monthlyBar = MONTHS.map(m => ({ m, total: tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[m]?.amount) || 0), 0) }));
+  const barMax = Math.max(...monthlyBar.map(x => x.total), 1);
+  const pgColor = PG_COLORS[selectedPG] || '#6366f1';
+  const syncDot = { idle: '#475569', syncing: '#f59e0b', ok: '#22c55e', error: '#ef4444' }[syncStatus];
+
+  async function saveEdit(updatedTenant) {
+    const key = editingTenant.name + editingTenant.dateJoining;
+    const updated = pgData[selectedPG].map(t => (t.name + t.dateJoining) === key ? updatedTenant : t);
+    const newData = { ...pgData, [selectedPG]: updated };
+    setPgData(newData); setEditingTenant(null);
+    await doPush(newData);
   }
 
-  // ── Main Layout ────────────────────────────────────────────
-  return(<>
-    <StyleInjector/>
-    <div style={{minHeight:'100vh',background:'#050810',fontFamily:'Outfit,sans-serif'}}>
+  async function addTenant() {
+    if (!newTenant.name.trim()) return showToast('Naam zaroor daalo', 'error');
+    const tenant = { ...newTenant, monthly: emptyMonthly() };
+    const newData = { ...pgData, [selectedPG]: [...(pgData[selectedPG] || []), tenant] };
+    setPgData(newData);
+    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
+    setShowAddTenant(false);
+    showToast('✅ Tenant added, syncing…', 'info');
+    await doPush(newData); // AUTO SYNC
+  }
 
-      {/* Header */}
-      <header style={{background:'linear-gradient(135deg,#0d1626dd,#050810dd)',borderBottom:'1px solid #1e2d45',padding:'11px 16px',display:'flex',alignItems:'center',gap:8,position:'sticky',top:0,zIndex:100,backdropFilter:'blur(16px)'}}>
-        <div style={{width:7,height:7,borderRadius:'50%',background:'#38bdf8',boxShadow:'0 0 10px #38bdf8',marginRight:2}}/>
-        <span style={{fontSize:16,fontWeight:800,color:'#f8fafc'}}>PG Manager</span>
-        {!isAdmin&&<span style={{fontSize:9,background:'#3b82f618',color:'#3b82f6',padding:'2px 8px',borderRadius:20,border:'1px solid #3b82f633',fontWeight:700}}>VIEWER</span>}
-        <div style={{flex:1}}/>
-        <div style={{display:'flex',alignItems:'center',gap:4}}>
-          <div style={{width:6,height:6,borderRadius:'50%',background:syncDot,boxShadow:`0 0 6px ${syncDot}`,animation:syncStatus==='syncing'?'pulse 1s infinite':'none'}}/>
-          {lastSync&&<span style={{fontSize:9,color:'#334155'}}>{lastSync}</span>}
-        </div>
-        {isAdmin&&<button className="bp" onClick={doPull} style={Sbtn}>⬇</button>}
-        {isAdmin&&<button className="bp" onClick={()=>doPush(pgData)} style={Sbtn}>⬆</button>}
-        {isAdmin&&<button className="bp" onClick={()=>setShowSettings(s=>!s)} style={Sbtn}>⚙</button>}
-        <button className="bp" onClick={()=>setUserRole(null)} style={{...Sbtn,color:'#ef444499',borderColor:'#ef444422'}}>Exit</button>
+  if (!userRole) return <LoginScreen onLogin={r => setUserRole(r)} />;
+
+  return (
+    <div style={S.root}>
+      {/* HEADER */}
+      <header style={S.header}>
+        <span style={S.logo}>🏠 PG</span>
+        {!isAdmin && <Pill c="#3b82f6" bg="#3b82f622">👁 View</Pill>}
+        <div style={{ flex: 1 }} />
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: syncDot, boxShadow: syncStatus !== 'idle' ? `0 0 8px ${syncDot}` : 'none' }} />
+        {lastSync && <span style={{ fontSize: 9, color: '#475569' }}>{lastSync}</span>}
+        {isAdmin && <>
+          <button onClick={doPull} style={S.hBtn}>⬇</button>
+          <button onClick={() => doPush(pgData)} style={S.hBtn}>⬆</button>
+          <button onClick={() => setShowSettings(s => !s)} style={S.hBtn}>⚙</button>
+        </>}
+        <button onClick={() => setUserRole(null)} style={{ ...S.hBtn, color: '#ef4444', borderColor: '#ef444433' }}>⏻</button>
       </header>
 
-      {/* Settings */}
-      {showSettings&&isAdmin&&(
-        <div className="fi" style={{background:'#0a0f1e',borderBottom:'1px solid #1e2d45',padding:16}}>
-          <div style={{fontSize:11,fontWeight:700,marginBottom:10,color:'#64748b',letterSpacing:'.06em'}}>🔗 GOOGLE SHEETS SYNC</div>
-          <input value={urlDraft} onChange={e=>setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec"
-            style={{width:'100%',background:'#070d1a',border:'1px solid #1e2d45',color:'#e2e8f0',padding:'8px 12px',borderRadius:10,fontSize:12,marginBottom:10,fontFamily:'JetBrains Mono,monospace',outline:'none',boxSizing:'border-box'}}/>
-          <div style={{display:'flex',gap:8}}>
-            <button className="bp" onClick={()=>{setWebAppUrl(urlDraft);showToast('Saved ✓');setShowSettings(false);}} style={{background:'linear-gradient(135deg,#22c55e,#16a34a)',border:'none',color:'#fff',padding:'7px 16px',borderRadius:8,cursor:'pointer',fontWeight:600,fontSize:12,fontFamily:'Outfit,sans-serif'}}>Save</button>
-            <button className="bp" onClick={doTest} style={{background:'linear-gradient(135deg,#3b82f6,#2563eb)',border:'none',color:'#fff',padding:'7px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontFamily:'Outfit,sans-serif'}}>Test Connection</button>
+      {/* SETTINGS */}
+      {showSettings && isAdmin && (
+        <div style={{ background: '#111827', borderBottom: '1px solid #1e293b', padding: 16 }}>
+          <div style={{ fontWeight: 700, color: '#94a3b8', marginBottom: 8, fontSize: 13 }}>🔗 Google Sheets Auto-Sync Setup</div>
+          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.7 }}>
+            Save karne pe ya naya tenant add karne pe <b style={{ color: '#f1f5f9' }}>automatically sync</b> hoga Google Sheet mein.
+          </div>
+          <input value={urlDraft} onChange={e => setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec"
+            style={{ ...S.input, width: '100%', marginBottom: 8 }} />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <button onClick={() => { setWebAppUrl(urlDraft); showToast('URL saved ✓'); setShowSettings(false); }} style={S.greenBtn}>💾 Save URL</button>
+            <button onClick={doTest} style={S.blueBtn}>🔌 Test</button>
+            <button onClick={doPull} style={S.ghostBtn}>⬇ Pull</button>
+          </div>
+          <div style={{ background: '#0a0f1e', borderRadius: 8, padding: 12, fontSize: 11, color: '#64748b', lineHeight: 2 }}>
+            <b style={{ color: '#94a3b8' }}>One-time setup:</b><br />
+            1. Google Sheet → <b style={{ color: '#f1f5f9' }}>Extensions → Apps Script</b><br />
+            2. <b style={{ color: '#f1f5f9' }}>GoogleAppsScript_PG_Sync_v2.js</b> paste karo<br />
+            3. <b style={{ color: '#f1f5f9' }}>Deploy → New Deployment → Web App</b><br />
+            &nbsp;&nbsp;Execute as: <b style={{ color: '#22c55e' }}>Me</b> | Access: <b style={{ color: '#22c55e' }}>Anyone</b><br />
+            4. Generated URL yahan paste karo → Save
           </div>
         </div>
       )}
 
-      {/* PG Pills */}
-      <div style={{padding:'10px 14px',display:'flex',gap:6,overflowX:'auto',background:'#0a0f1e',borderBottom:'1px solid #1e2d45'}}>
-        {allPGs.map(pg=>{
-          const c=PG_COLORS[pg]||'#6366f1';const isSel=selectedPG===pg;
-          return(<button key={pg} className="bp" onClick={()=>{setSelectedPG(pg);setActivePGDetail(pg);setView('pg_detail');}} style={{padding:'6px 16px',borderRadius:22,cursor:'pointer',whiteSpace:'nowrap',fontSize:14,fontWeight:700,fontFamily:'Outfit,sans-serif',background:isSel?c:'#111827',color:isSel?'#fff':'#64748b',border:`1px solid ${isSel?'transparent':'#1e2d45'}`,boxShadow:isSel?`0 4px 16px ${c}44`:'none',transition:'all .2s'}}>
-            {pg}
-          </button>);
+      {/* PG TABS */}
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '8px 14px', background: '#0f1629', borderBottom: '1px solid #1e293b', scrollbarWidth: 'none' }}>
+        {Object.keys(pgData).map(pg => {
+          const pgC = (pgData[pg] || []).reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
+          return (
+            <button key={pg} onClick={() => setSelectedPG(pg)} style={{ padding: '6px 14px', borderRadius: 20, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', fontSize: 13, fontWeight: 700, background: selectedPG === pg ? PG_COLORS[pg] || '#6366f1' : '#111827', color: selectedPG === pg ? '#fff' : '#64748b', boxShadow: selectedPG === pg ? `0 0 10px ${PG_COLORS[pg]}55` : 'none' }}>
+              {pg}{pgC > 0 && <span style={{ fontSize: 9, marginLeft: 5, opacity: 0.8 }}>₹{(pgC / 1000).toFixed(0)}k</span>}
+            </button>
+          );
         })}
       </div>
 
-      {/* View Tabs */}
-      <div style={{display:'flex',borderBottom:'1px solid #1e2d45',background:'#070d1a',overflowX:'auto'}}>
-        {[['overview','🏠 Overview'],['tenants','👥 Tenants'],['monthly','📅 Monthly'],['collectors','💼 Collectors']].map(([v,label])=>(
-          <button key={v} className="bp" onClick={()=>setView(v)} style={{padding:'10px 16px',border:'none',background:'transparent',color:view===v?pgColor:'#475569',borderBottom:`2px solid ${view===v?pgColor:'transparent'}`,cursor:'pointer',fontSize:12,fontWeight:700,whiteSpace:'nowrap',fontFamily:'Outfit,sans-serif',transition:'color .2s,border-color .2s'}}>{label}</button>
+      {/* VIEW TABS */}
+      <div style={{ display: 'flex', background: '#0a0f1e', borderBottom: '1px solid #1e293b', scrollbarWidth: 'none' }}>
+        {[['dashboard', '📊', 'Overview'], ['tenants', '👥', 'Tenants'], ['monthly', '📅', 'Monthly'], ['collectors', '💼', 'Collectors']].map(([v, ic, lbl]) => (
+          <button key={v} onClick={() => setView(v)} style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: view === v ? pgColor : '#475569', borderBottom: `2px solid ${view === v ? pgColor : 'transparent'}` }}>
+            {ic} {lbl}
+          </button>
         ))}
       </div>
 
-      <main style={{padding:'16px',maxWidth:900,margin:'0 auto'}}>
+      {/* MAIN */}
+      <main style={{ padding: '14px 14px 88px', maxWidth: 700, margin: '0 auto' }}>
 
-        {/* ══ OVERVIEW ══ */}
-        {view==='overview'&&(<>
-          <div style={{display:'flex',gap:5,marginBottom:16,overflowX:'auto',paddingBottom:2}}>
-            {MONTHS.map(m=>(
-              <button key={m} className="bp" onClick={()=>setSelectedMonth(m)} style={{padding:'4px 10px',borderRadius:20,border:`1px solid ${selectedMonth===m?'transparent':'#1e2d45'}`,background:selectedMonth===m?pgColor:'#111827',color:selectedMonth===m?'#fff':'#64748b',cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif',whiteSpace:'nowrap',transition:'all .18s'}}>
-                {m.slice(0,3)}
-              </button>
-            ))}
-          </div>
-          {/* Grand banner */}
-          <div className="fu" style={{background:'linear-gradient(135deg,#0d2040,#0a0f1e)',border:'1px solid #1e3a5f',borderRadius:20,padding:'20px 24px',marginBottom:16,position:'relative',overflow:'hidden'}}>
-            <div style={{position:'absolute',top:-30,right:-30,width:130,height:130,borderRadius:'50%',background:'radial-gradient(circle,#38bdf822,transparent)',pointerEvents:'none'}}/>
-            <div style={{fontSize:10,color:'#475569',fontWeight:700,letterSpacing:'.1em',marginBottom:4}}>TOTAL COLLECTION — {selectedMonth.toUpperCase()}</div>
-            <div style={{fontSize:36,fontWeight:900,color:'#38bdf8',fontFamily:'JetBrains Mono,monospace',letterSpacing:'-.03em'}}>₹{grandTotal.toLocaleString()}</div>
-            <div style={{display:'flex',gap:24,marginTop:12}}>
-              <div><div style={{fontSize:10,color:'#475569',fontWeight:600}}>ACTIVE</div><div style={{fontSize:20,fontWeight:800}}>{grandActive.length}</div></div>
-              <div><div style={{fontSize:10,color:'#475569',fontWeight:600}}>PENDING</div><div style={{fontSize:20,fontWeight:800,color:grandPending?'#ef4444':'#22c55e'}}>{grandPending}</div></div>
-              <div><div style={{fontSize:10,color:'#475569',fontWeight:600}}>PGs</div><div style={{fontSize:20,fontWeight:800}}>{allPGs.length}</div></div>
+        {/* ══ DASHBOARD ══ */}
+        {view === 'dashboard' && (<>
+          <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
+
+          {/* Banner */}
+          <div style={{ background: `linear-gradient(135deg,${pgColor}28,#111827)`, borderRadius: 16, padding: '16px 18px', border: `1px solid ${pgColor}44`, margin: '12px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>ALL PGs — {selectedMonth}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: pgColor }}>₹{fmtNum(grandTotal)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 11, color: '#64748b' }}>{selectedPG}</div>
+                <div style={{ fontSize: 20, fontWeight: 800 }}>₹{fmtNum(collected)}</div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>of ₹{fmtNum(totalRent)}</div>
+              </div>
             </div>
+            <div style={{ marginTop: 10, background: '#0a0f1e', borderRadius: 6, height: 6 }}>
+              <div style={{ height: '100%', background: pgColor, borderRadius: 6, width: `${Math.min(100, totalRent > 0 ? (collected / totalRent) * 100 : 0)}%` }} />
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>{totalRent > 0 ? `${Math.round((collected / totalRent) * 100)}% collected` : '—'}</div>
           </div>
-          {/* PG breakdown */}
-          <div style={{fontSize:10,color:'#475569',fontWeight:700,letterSpacing:'.08em',marginBottom:10}}>PG-WISE BREAKDOWN</div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(155px,1fr))',gap:10,marginBottom:16}}>
-            {pgStats.map(({pg,col,pend,active:act,color},i)=>(
-              <div key={pg} className="ch fu bp" style={{animationDelay:`${i*50}ms`,borderRadius:14,border:`1px solid ${pend?'#ef444422':'#1e2d45'}`,cursor:'pointer',padding:'14px',background:'linear-gradient(135deg,#0d1626,#0a0f1e)',position:'relative',overflow:'hidden'}} onClick={()=>{setSelectedPG(pg);setActivePGDetail(pg);setView('pg_detail');}}>
-                <div style={{position:'absolute',top:0,right:0,width:50,height:50,background:`radial-gradient(circle at top right,${color}22,transparent)`,borderRadius:'0 14px 0 0'}}/>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                  <div style={{width:8,height:8,borderRadius:'50%',background:color,boxShadow:`0 0 8px ${color}`}}/>
-                  {pend>0&&<div style={{fontSize:9,background:'#ef444418',color:'#ef4444',padding:'2px 6px',borderRadius:20,fontWeight:700}}>{pend} pending</div>}
-                </div>
-                <div style={{fontSize:14,fontWeight:800,color,marginBottom:2}}>{pg}</div>
-                <div style={{fontSize:20,fontWeight:800,fontFamily:'JetBrains Mono,monospace',color:'#f1f5f9'}}>₹{col.toLocaleString()}</div>
-                <div style={{fontSize:10,color:'#475569',marginTop:3}}>{act} tenants</div>
+
+          {/* Stat Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            {[
+              { ic: '👥', lbl: 'Active', val: active.length, c: pgColor },
+              { ic: '📋', lbl: 'Expected', val: `₹${fmtNum(totalRent)}`, c: pgColor },
+              { ic: '⏳', lbl: 'Rent Pending', val: rentPending.length, warn: rentPending.length > 0, sub: rentPending.length > 0 ? `${halfPaid.length} half paid` : '✅ All paid' },
+              { ic: '🔒', lbl: 'No Deposit', val: depositPending.length, warn: depositPending.length > 0, sub: depositPending.length > 0 ? depositPending.slice(0, 1).map(t => t.name).join('') : '✅ All deposited' },
+            ].map((s, i) => (
+              <div key={i} onClick={() => setPendingTab(i >= 2 ? (i === 2 ? 'rent' : 'deposit') : null)}
+                style={{ background: '#111827', borderRadius: 14, padding: '14px 12px', border: `1px solid ${s.warn ? '#ef444466' : '#1e293b'}`, boxShadow: s.warn ? '0 0 12px #ef444422' : 'none', cursor: i >= 2 ? 'pointer' : 'default' }}>
+                <div style={{ fontSize: 22, marginBottom: 2 }}>{s.ic}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: s.warn ? '#ef4444' : (s.c || '#f1f5f9') }}>{s.val}</div>
+                <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>{s.lbl}</div>
+                {s.sub && <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>{s.sub}</div>}
               </div>
             ))}
           </div>
-          {/* All-PG bar chart */}
-          <div className="fu" style={{background:'linear-gradient(135deg,#0d1626,#0a0f1e)',borderRadius:16,padding:'16px',border:'1px solid #1e2d45'}}>
-            <div style={{fontSize:12,fontWeight:700,marginBottom:12,color:'#94a3b8'}}>📊 Monthly Collection — All PGs</div>
-            <div style={{display:'flex',gap:4,alignItems:'flex-end',height:80}}>
-              {MONTHS.map(m=>{
-                const tot=allTenants.reduce((s,t)=>s+(parseFloat(t.monthly?.[m]?.amount)||0),0);
-                const mx=Math.max(...MONTHS.map(mm=>allTenants.reduce((s,t)=>s+(parseFloat(t.monthly?.[mm]?.amount)||0),0)),1);
-                const h=Math.max(4,(tot/mx)*68);
-                return(<div key={m} className="bp" onClick={()=>setSelectedMonth(m)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer'}}>
-                  <div style={{width:'100%',height:h,background:m===selectedMonth?`linear-gradient(180deg,${pgColor},${pgColor}66)`:'#1e2d45',borderRadius:'4px 4px 2px 2px',transition:'height .4s ease,background .2s'}}/>
-                  <div style={{fontSize:8,color:m===selectedMonth?pgColor:'#334155',fontWeight:600}}>{m.slice(0,1)}</div>
-                </div>);
+
+          {/* Bar Chart */}
+          <div style={{ background: '#111827', borderRadius: 14, padding: 14, border: '1px solid #1e293b', marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>📈 {selectedPG} — Monthly Trend</div>
+            <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 72 }}>
+              {monthlyBar.map(({ m, total }) => (
+                <div key={m} onClick={() => setSelectedMonth(m)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                  <div style={{ width: '100%', height: Math.max(3, (total / barMax) * 60), background: m === selectedMonth ? pgColor : total > 0 ? '#334155' : '#1e293b', borderRadius: 3 }} />
+                  <div style={{ fontSize: 8, color: m === selectedMonth ? pgColor : '#475569', fontWeight: m === selectedMonth ? 700 : 400 }}>{m.slice(0, 1)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Pending Details */}
+          <div style={{ background: '#111827', borderRadius: 14, padding: 14, border: '1px solid #1e293b' }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              {[['rent', '⏳ Rent'], ['deposit', '🔒 Deposit']].map(([t, lbl]) => (
+                <button key={t} onClick={() => setPendingTab(t)} style={{ flex: 1, padding: '7px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: pendingTab === t ? pgColor : '#0a0f1e', color: pendingTab === t ? '#fff' : '#64748b' }}>{lbl} Pending</button>
+              ))}
+            </div>
+
+            {pendingTab === 'rent' && (<>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: '#64748b' }}>{selectedMonth} — {rentPending.length} pending</span>
+                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>₹{fmtNum(rentPending.reduce((s, t) => s + ((parseFloat(t.rent) || 0) - (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)), 0))} due</span>
+              </div>
+              {rentPending.length === 0
+                ? <div style={{ color: '#22c55e', fontSize: 13, padding: '8px 0' }}>✅ Sab ne rent de diya!</div>
+                : rentPending.map(t => {
+                  const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
+                  const rent = parseFloat(t.rent) || 0;
+                  return (
+                    <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • ₹{fmtNum(t.rent)}/mo</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ color: paid > 0 ? '#f59e0b' : '#ef4444', fontWeight: 700, fontSize: 12 }}>{paid > 0 ? `Half (₹${fmtNum(paid)})` : 'Not Paid'}</div>
+                        <div style={{ fontSize: 11, color: '#ef4444' }}>₹{fmtNum(rent - paid)} due</div>
+                      </div>
+                    </div>
+                  );
+                })
+              }
+            </>)}
+
+            {pendingTab === 'deposit' && (<>
+              <div style={{ marginBottom: 8 }}><span style={{ fontSize: 11, color: '#64748b' }}>{depositPending.length} tenants bina deposit ke</span></div>
+              {depositPending.length === 0
+                ? <div style={{ color: '#22c55e', fontSize: 13, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
+                : depositPending.map(t => (
+                  <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • Rent ₹{fmtNum(t.rent)}</div>
+                    </div>
+                    <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 12 }}>No Deposit ⚠</div>
+                  </div>
+                ))
+              }
+            </>)}
+          </div>
+        </>)}
+
+        {/* ══ TENANTS ══ */}
+        {view === 'tenants' && (<>
+          <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
+          <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search…" style={{ ...S.input, flex: 1, padding: '9px 12px' }} />
+            {isAdmin && <button onClick={() => setShowAddTenant(true)} style={{ background: pgColor, border: 'none', color: '#fff', padding: '9px 16px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>+ Add</button>}
+          </div>
+
+          {/* Quick stats */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
+            {[
+              { lbl: 'Active', val: active.length, c: '#22c55e' },
+              { lbl: `${selectedMonth.slice(0,3)} Paid`, val: active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) >= (parseFloat(t.rent) || 1)).length, c: '#22c55e' },
+              { lbl: 'Half Paid', val: halfPaid.length, c: '#f59e0b' },
+              { lbl: 'Not Paid', val: active.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)).length, c: '#ef4444' },
+              { lbl: 'No Deposit', val: depositPending.length, c: '#f59e0b' },
+            ].map(s => (
+              <div key={s.lbl} style={{ background: '#111827', borderRadius: 10, padding: '7px 14px', border: `1px solid ${s.c}33`, textAlign: 'center', flexShrink: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: s.c }}>{s.val}</div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>{s.lbl}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add Tenant Form */}
+          {showAddTenant && isAdmin && (
+            <div style={{ background: '#111827', borderRadius: 14, padding: 14, marginBottom: 14, border: `1px solid ${pgColor}66` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: '#94a3b8' }}>NEW TENANT — {selectedPG}</span>
+                <button onClick={() => setShowAddTenant(false)} style={{ ...S.ghostBtn, fontSize: 11 }}>Cancel</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input label="Naam *" value={newTenant.name} onChange={v => setNewTenant(p => ({ ...p, name: v }))} />
+                  <Input label="Contact" value={newTenant.contact} onChange={v => setNewTenant(p => ({ ...p, contact: v }))} />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input label="Deposit ₹" value={newTenant.deposit} onChange={v => setNewTenant(p => ({ ...p, deposit: v }))} />
+                  <Input label="Rent ₹/mo" value={newTenant.rent} onChange={v => setNewTenant(p => ({ ...p, rent: v }))} />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input label="Date Joining" type="date" value={newTenant.dateJoining} onChange={v => setNewTenant(p => ({ ...p, dateJoining: v }))} />
+                  <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
+                </div>
+                <Input label="Note" value={newTenant.note} onChange={v => setNewTenant(p => ({ ...p, note: v }))} />
+                <button onClick={addTenant} style={{ background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14, marginTop: 4 }}>
+                  ✅ Add Tenant + Auto Sync to Google Sheet
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tenant List */}
+          {filtered.map(t => {
+            const isActive = !t.dateLeaving || new Date(t.dateLeaving) >= new Date();
+            const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
+            const rent = parseFloat(t.rent) || 0;
+            const hasDeposit = t.deposit && t.deposit !== '' && t.deposit !== '0';
+            const rs = paid === 0 ? 'unpaid' : paid < rent ? 'half' : 'full';
+            const rc = { unpaid: '#ef4444', half: '#f59e0b', full: '#22c55e' }[rs];
+            const rl = { unpaid: 'Not Paid', half: `Half ₹${fmtNum(paid)}`, full: `✅ ₹${fmtNum(paid)}` }[rs];
+            return (
+              <div key={t.name + t.dateJoining} onClick={() => isAdmin && setEditingTenant(t)} style={{ background: '#111827', borderRadius: 14, padding: '13px 14px', border: `1px solid ${rs !== 'full' && isActive ? rc + '55' : '#1e293b'}`, cursor: isAdmin ? 'pointer' : 'default', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 15, color: isActive ? '#f1f5f9' : '#64748b' }}>{t.name}</span>
+                      {!isActive && <Pill>Left</Pill>}
+                      {!hasDeposit && isActive && <Pill c="#f59e0b" bg="#f59e0b22">No Dep</Pill>}
+                      {rs === 'half' && isActive && <Pill c="#f59e0b" bg="#f59e0b22">Half</Pill>}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
+                      📅 {fmtDate(t.dateJoining)} {t.contact && `• 📞 ${t.contact}`}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Rent <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.rent)}</b></span>
+                      {hasDeposit && <span style={{ fontSize: 11, color: '#94a3b8' }}>Dep <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.deposit)}</b></span>}
+                    </div>
+                    {t.note && <div style={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', marginTop: 3 }}>💬 {t.note}</div>}
+                  </div>
+                  <div style={{ textAlign: 'right', marginLeft: 10, flexShrink: 0 }}>
+                    <div style={{ color: rc, fontWeight: 700, fontSize: 13 }}>{rl}</div>
+                    {t.monthly?.[selectedMonth]?.collector && <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{t.monthly[selectedMonth].collector}</div>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && <div style={{ textAlign: 'center', color: '#475569', padding: 32 }}>No tenants found</div>}
+        </>)}
+
+        {/* ══ MONTHLY ══ */}
+        {view === 'monthly' && (<>
+          <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <div style={{ flex: 1, background: '#111827', borderRadius: 12, padding: 12, border: `1px solid ${pgColor}44`, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#64748b' }}>Collected</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: pgColor }}>₹{fmtNum(collected)}</div>
+              </div>
+              <div style={{ flex: 1, background: '#111827', borderRadius: 12, padding: 12, border: '1px solid #ef444444', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#64748b' }}>Remaining</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#ef4444' }}>₹{fmtNum(Math.max(0, totalRent - collected))}</div>
+              </div>
+              <div style={{ flex: 1, background: '#111827', borderRadius: 12, padding: 12, border: '1px solid #f59e0b44', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#64748b' }}>Half Paid</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#f59e0b' }}>{halfPaid.length}</div>
+              </div>
+            </div>
+            <div style={{ background: '#111827', borderRadius: 14, overflow: 'hidden', border: '1px solid #1e293b' }}>
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 700 }}>{selectedPG} — {selectedMonth}</span>
+                <span style={{ color: pgColor, fontWeight: 700 }}>{active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) >= (parseFloat(t.rent) || 1)).length}/{active.length} paid</span>
+              </div>
+              {active.map(t => {
+                const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
+                const rent = parseFloat(t.rent) || 0;
+                const sc = paid === 0 ? '#ef4444' : paid < rent ? '#f59e0b' : '#22c55e';
+                const sl = paid === 0 ? 'Not Paid' : paid < rent ? `₹${fmtNum(paid)} (Half)` : `✅ ₹${fmtNum(paid)}`;
+                return (
+                  <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', borderBottom: '1px solid #0a0f1e', cursor: isAdmin ? 'pointer' : 'default' }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>₹{fmtNum(t.rent)}/mo{t.monthly?.[selectedMonth]?.collector ? ` • ${t.monthly[selectedMonth].collector}` : ''}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ color: sc, fontWeight: 700, fontSize: 13 }}>{sl}</div>
+                      {paid > 0 && paid < rent && <div style={{ fontSize: 10, color: '#ef4444' }}>₹{fmtNum(rent - paid)} due</div>}
+                    </div>
+                  </div>
+                );
               })}
             </div>
           </div>
         </>)}
 
-        {/* ══ TENANTS ══ */}
-        {view==='tenants'&&(<>
-          <div style={{display:'flex',gap:5,marginBottom:12,overflowX:'auto',paddingBottom:2}}>
-            {MONTHS.map(m=>(
-              <button key={m} className="bp" onClick={()=>setSelectedMonth(m)} style={{padding:'4px 10px',borderRadius:20,border:`1px solid ${selectedMonth===m?'transparent':'#1e2d45'}`,background:selectedMonth===m?pgColor:'#111827',color:selectedMonth===m?'#fff':'#64748b',cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif',whiteSpace:'nowrap',transition:'all .18s'}}>
-                {m.slice(0,3)}
-              </button>
-            ))}
-          </div>
-          <div style={{display:'flex',gap:8,marginBottom:12,alignItems:'center'}}>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tenant…" style={{flex:1,background:'#070d1a',border:'1px solid #1e2d45',color:'#e2e8f0',padding:'8px 12px',borderRadius:10,fontSize:13,fontFamily:'Outfit,sans-serif',outline:'none'}}/>
-            <select value={selectedPG} onChange={e=>setSelectedPG(e.target.value)} style={{background:'#070d1a',border:'1px solid #1e2d45',color:'#94a3b8',padding:'8px 10px',borderRadius:10,fontSize:12,fontFamily:'Outfit,sans-serif',cursor:'pointer',outline:'none'}}>
-              {allPGs.map(pg=><option key={pg} value={pg}>{pg}</option>)}
-            </select>
-            {isAdmin&&<button className="bp ch" onClick={()=>setShowAddTenant(s=>!s)} style={{background:`linear-gradient(135deg,${pgColor},${pgColor}aa)`,border:'none',color:'#fff',padding:'8px 14px',borderRadius:10,cursor:'pointer',fontWeight:700,fontSize:13,fontFamily:'Outfit,sans-serif',whiteSpace:'nowrap',boxShadow:`0 4px 16px ${pgColor}33`}}>+ Add</button>}
-          </div>
-          {/* Add tenant form */}
-          {showAddTenant&&isAdmin&&(
-            <div className="fu" style={{background:'linear-gradient(135deg,#0d1626,#070d1a)',borderRadius:16,padding:16,marginBottom:14,border:`1px solid ${pgColor}44`}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#64748b',letterSpacing:'.06em',marginBottom:12}}>NEW TENANT — {selectedPG}</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-                <Inp label="Naam*" value={newTenant.name} onChange={v=>setNewTenant(p=>({...p,name:v}))}/>
-                <Inp label="Contact" value={newTenant.contact} onChange={v=>setNewTenant(p=>({...p,contact:v}))}/>
-                <Inp label="Deposit ₹" value={newTenant.deposit} onChange={v=>setNewTenant(p=>({...p,deposit:v}))}/>
-                <Inp label="Rent ₹/mo" value={newTenant.rent} onChange={v=>setNewTenant(p=>({...p,rent:v}))}/>
-                <Inp label="Joining Date" type="date" value={newTenant.dateJoining} onChange={v=>setNewTenant(p=>({...p,dateJoining:v}))}/>
-                <Inp label="Leaving Date" type="date" value={newTenant.dateLeaving} onChange={v=>setNewTenant(p=>({...p,dateLeaving:v}))}/>
-              </div>
-              <Inp label="Note" value={newTenant.note} onChange={v=>setNewTenant(p=>({...p,note:v}))}/>
-              <div style={{display:'flex',gap:8,marginTop:12}}>
-                <button className="bp ch" onClick={addTenant} style={{background:'linear-gradient(135deg,#22c55e,#16a34a)',border:'none',color:'#fff',padding:'9px 20px',borderRadius:10,cursor:'pointer',fontWeight:700,fontSize:13,fontFamily:'Outfit,sans-serif'}}>Add + Sync</button>
-                <button className="bp" onClick={()=>setShowAddTenant(false)} style={{background:'#111827',border:'1px solid #1e2d45',color:'#64748b',padding:'9px 16px',borderRadius:10,cursor:'pointer',fontFamily:'Outfit,sans-serif'}}>Cancel</button>
-              </div>
-            </div>
-          )}
-          <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            {filtered.map((t,i)=>{
-              const isActive=!t.dateLeaving||new Date(t.dateLeaving)>=new Date();
-              const status=getRentStatus(t,selectedMonth);
-              const depMissing=!t.deposit||t.deposit===''||t.deposit==='0';
-              return(
-                <div key={t.name+t.dateJoining} className="ch fu row" onClick={()=>openEdit(t)} style={{background:'linear-gradient(135deg,#0d1626,#0a0f1e)',borderRadius:14,padding:'14px 16px',border:`1px solid ${status.isPending&&isActive?'#ef444422':'#1e2d45'}`,cursor:isAdmin?'pointer':'default',animationDelay:`${i*30}ms`}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:700,fontSize:15,color:isActive?'#f1f5f9':'#475569',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-                        {t.name}
-                        {!isActive&&<span style={{fontSize:9,background:'#334155',color:'#64748b',padding:'2px 6px',borderRadius:20}}>Left</span>}
-                        {depMissing&&isActive&&<span style={{fontSize:9,background:'#f59e0b18',color:'#f59e0b',padding:'2px 6px',borderRadius:20,border:'1px solid #f59e0b33'}}>No Deposit</span>}
-                      </div>
-                      <div style={{fontSize:11,color:'#475569',marginTop:3}}>Joined: {fmtDate(t.dateJoining)} • ₹{t.rent||'—'}/mo{t.deposit?` • Dep: ₹${t.deposit}`:''}</div>
-                      {t.note&&<div style={{fontSize:11,color:'#64748b',fontStyle:'italic',marginTop:2}}>{t.note}</div>}
-                      {t.contact&&<div style={{display:'flex',gap:6,marginTop:8}}>
-                        <button className="bp" onClick={e=>doCall(t.contact,e)} style={{background:'#22c55e18',border:'1px solid #22c55e33',color:'#22c55e',padding:'4px 10px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif'}}>📞 Call</button>
-                        <button className="bp" onClick={e=>doWhatsApp(t.contact,t.name,e)} style={{background:'#25d36618',border:'1px solid #25d36633',color:'#25d366',padding:'4px 10px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif'}}>💬 WhatsApp</button>
-                      </div>}
-                    </div>
-                    <div style={{textAlign:'right',marginLeft:12}}>
-                      <div style={{fontWeight:700,fontSize:12,color:status.color,background:status.bg,padding:'4px 10px',borderRadius:20}}>{status.label}</div>
-                      {t.monthly?.[selectedMonth]?.collector&&<div style={{fontSize:10,color:'#475569',marginTop:4}}>{t.monthly[selectedMonth].collector}</div>}
+        {/* ══ COLLECTORS ══ */}
+        {view === 'collectors' && (<>
+          <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
+              {Object.entries(collectorTotals).map(([col, months]) => {
+                const clrs = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b' };
+                const c = clrs[col] || '#94a3b8';
+                const mAmt = months[selectedMonth] || 0;
+                const yTotal = Object.values(months).reduce((s, v) => s + v, 0);
+                return (
+                  <div key={col} style={{ background: `linear-gradient(135deg,${c}14,#111827)`, borderRadius: 14, padding: '12px 10px', border: `1px solid ${c}44` }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: c, marginBottom: 4 }}>{col.split('/')[0]}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800 }}>₹{(mAmt / 1000).toFixed(1)}k</div>
+                    <div style={{ fontSize: 9, color: '#64748b' }}>{selectedMonth}</div>
+                    <div style={{ marginTop: 6, borderTop: `1px solid ${c}22`, paddingTop: 6 }}>
+                      <div style={{ fontSize: 9, color: '#94a3b8' }}>Year</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: c }}>₹{(yTotal / 1000).toFixed(1)}k</div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </>)}
-
-        {/* ══ MONTHLY ══ */}
-        {view==='monthly'&&(<>
-          <div style={{display:'flex',gap:5,marginBottom:14,overflowX:'auto',paddingBottom:2}}>
-            {MONTHS.map(m=>(
-              <button key={m} className="bp" onClick={()=>setSelectedMonth(m)} style={{padding:'4px 12px',borderRadius:20,border:`1px solid ${selectedMonth===m?'transparent':'#1e2d45'}`,background:selectedMonth===m?pgColor:'#111827',color:selectedMonth===m?'#fff':'#64748b',cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif',whiteSpace:'nowrap',transition:'all .18s'}}>
-                {m}
-              </button>
-            ))}
-          </div>
-          <div style={{background:'linear-gradient(135deg,#0d1626,#0a0f1e)',borderRadius:16,border:'1px solid #1e2d45',overflow:'hidden'}}>
-            <div style={{padding:'14px 18px',borderBottom:'1px solid #1e2d45',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div><div style={{fontWeight:800,fontSize:15}}>{selectedPG}</div><div style={{fontSize:11,color:'#475569',marginTop:1}}>{selectedMonth}</div></div>
-              <div style={{fontFamily:'JetBrains Mono,monospace',fontSize:18,fontWeight:800,color:pgColor}}>₹{collected.toLocaleString()}</div>
+                );
+              })}
             </div>
-            {filtered.filter(t=>!t.dateLeaving||new Date(t.dateLeaving)>=new Date()).map(t=>{
-              const status=getRentStatus(t,selectedMonth);
-              return(<div key={t.name} className="row" onClick={()=>openEdit(t)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 18px',borderBottom:'1px solid #0d1626',cursor:isAdmin?'pointer':'default'}}>
-                <div><div style={{fontWeight:600,fontSize:14}}>{t.name}</div><div style={{fontSize:11,color:'#475569'}}>Rent: ₹{t.rent||'—'}</div></div>
-                <div style={{textAlign:'right'}}>
-                  <div style={{fontWeight:700,fontSize:12,color:status.color,background:status.bg,padding:'3px 10px',borderRadius:20}}>{status.label}</div>
-                  {t.monthly?.[selectedMonth]?.collector&&<div style={{fontSize:10,color:'#475569',marginTop:3}}>{t.monthly[selectedMonth].collector}</div>}
-                </div>
-              </div>);
-            })}
-          </div>
-        </>)}
 
-        {/* ══ COLLECTORS ══ */}
-        {view==='collectors'&&(<>
-          <div style={{display:'flex',gap:5,marginBottom:14,overflowX:'auto',paddingBottom:2}}>
-            {MONTHS.map(m=>(
-              <button key={m} className="bp" onClick={()=>setSelectedMonth(m)} style={{padding:'4px 10px',borderRadius:20,border:`1px solid ${selectedMonth===m?'transparent':'#1e2d45'}`,background:selectedMonth===m?pgColor:'#111827',color:selectedMonth===m?'#fff':'#64748b',cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'Outfit,sans-serif',whiteSpace:'nowrap',transition:'all .18s'}}>
-                {m.slice(0,3)}
-              </button>
-            ))}
-          </div>
-          <div style={{fontSize:10,color:'#475569',fontWeight:700,letterSpacing:'.08em',marginBottom:10}}>RENT RECEIVED — {selectedMonth.toUpperCase()}</div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:10,marginBottom:20}}>
-            {Object.entries(collectorStats).map(([collector,stats],i)=>{
-              const c=COLLECTOR_COLORS[collector]||'#94a3b8';
-              const monthAmt=stats.months[selectedMonth]||0;
-              return(<div key={collector} className="fu ch" style={{borderRadius:16,border:`1px solid ${c}33`,background:`linear-gradient(135deg,${c}0e,#0d1626)`,padding:'16px',animationDelay:`${i*60}ms`,position:'relative',overflow:'hidden'}}>
-                <div style={{position:'absolute',top:-20,right:-20,width:70,height:70,borderRadius:'50%',background:`radial-gradient(circle,${c}22,transparent)`}}/>
-                <div style={{fontSize:10,color:c,fontWeight:700,letterSpacing:'.06em',marginBottom:6}}>{collector.toUpperCase()}</div>
-                <div style={{fontSize:26,fontWeight:900,color:'#f1f5f9',fontFamily:'JetBrains Mono,monospace',letterSpacing:'-.02em'}}>₹{monthAmt.toLocaleString()}</div>
-                <div style={{fontSize:10,color:'#475569',marginTop:4}}>Rent received</div>
-              </div>);
-            })}
-          </div>
-          <div style={{fontSize:10,color:'#475569',fontWeight:700,letterSpacing:'.08em',marginBottom:10}}>MONTH-WISE BREAKDOWN</div>
-          <div style={{background:'linear-gradient(135deg,#0d1626,#0a0f1e)',borderRadius:16,border:'1px solid #1e2d45',overflow:'hidden'}}>
-            <div style={{overflowX:'auto'}}>
-              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,fontFamily:'Outfit,sans-serif'}}>
-                <thead>
-                  <tr style={{background:'#070d1a'}}>
-                    <th style={{padding:'10px 16px',textAlign:'left',color:'#475569',fontWeight:700,fontSize:11,letterSpacing:'.05em'}}>MONTH</th>
-                    {Object.keys(collectorStats).map(c=>(
-                      <th key={c} style={{padding:'10px 16px',textAlign:'right',color:COLLECTOR_COLORS[c]||'#94a3b8',fontWeight:700,fontSize:11,letterSpacing:'.05em'}}>{c.toUpperCase()}</th>
-                    ))}
-                    <th style={{padding:'10px 16px',textAlign:'right',color:'#64748b',fontWeight:700,fontSize:11,letterSpacing:'.05em'}}>TOTAL</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MONTHS.map(m=>{
-                    const rowTotal=Object.values(collectorStats).reduce((s,st)=>s+(st.months[m]||0),0);
-                    const isSel=m===selectedMonth;
-                    return(<tr key={m} style={{borderTop:'1px solid #1e2d45',background:isSel?'#ffffff05':'transparent',cursor:'pointer',transition:'background .15s'}} onClick={()=>setSelectedMonth(m)}>
-                      <td style={{padding:'10px 16px',color:isSel?pgColor:'#94a3b8',fontWeight:isSel?700:500}}>{m}</td>
-                      {Object.entries(collectorStats).map(([c,st])=>(
-                        <td key={c} style={{padding:'10px 16px',textAlign:'right',color:st.months[m]?'#f1f5f9':'#1e2d45',fontFamily:'JetBrains Mono,monospace',fontWeight:600}}>
-                          {st.months[m]?`₹${st.months[m].toLocaleString()}`:'—'}
-                        </td>
-                      ))}
-                      <td style={{padding:'10px 16px',textAlign:'right',color:rowTotal?pgColor:'#1e2d45',fontWeight:800,fontFamily:'JetBrains Mono,monospace'}}>
-                        {rowTotal?`₹${rowTotal.toLocaleString()}`:'—'}
+            <div style={{ background: '#111827', borderRadius: 14, overflow: 'hidden', border: '1px solid #1e293b' }}>
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid #1e293b', fontWeight: 700, fontSize: 13 }}>📅 Month-wise Collection</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#0a0f1e' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontSize: 11 }}>Month</th>
+                      {Object.keys(collectorTotals).map(c => {
+                        const clrs = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b' };
+                        return <th key={c} style={{ padding: '8px 10px', textAlign: 'right', color: clrs[c] || '#94a3b8', fontSize: 11 }}>{c.split('/')[0]}</th>;
+                      })}
+                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#94a3b8', fontSize: 11 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {MONTHS.map(m => {
+                      const rowTotal = Object.values(collectorTotals).reduce((s, months) => s + (months[m] || 0), 0);
+                      return (
+                        <tr key={m} onClick={() => setSelectedMonth(m)} style={{ borderTop: '1px solid #0a0f1e', background: m === selectedMonth ? '#ffffff08' : 'transparent', cursor: 'pointer' }}>
+                          <td style={{ padding: '9px 12px', color: m === selectedMonth ? pgColor : '#94a3b8', fontWeight: m === selectedMonth ? 700 : 400 }}>{m.slice(0, 3)}</td>
+                          {Object.entries(collectorTotals).map(([c, months]) => (
+                            <td key={c} style={{ padding: '9px 10px', textAlign: 'right', color: months[m] ? '#f1f5f9' : '#334155' }}>
+                              {months[m] ? `₹${(months[m] / 1000).toFixed(1)}k` : '—'}
+                            </td>
+                          ))}
+                          <td style={{ padding: '9px 12px', textAlign: 'right', color: rowTotal ? pgColor : '#334155', fontWeight: 700 }}>
+                            {rowTotal ? `₹${(rowTotal / 1000).toFixed(1)}k` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid #1e293b', background: '#0a0f1e' }}>
+                      <td style={{ padding: '9px 12px', color: '#94a3b8', fontWeight: 700, fontSize: 11 }}>TOTAL</td>
+                      {Object.entries(collectorTotals).map(([c, months]) => {
+                        const clrs = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b' };
+                        const t = Object.values(months).reduce((s, v) => s + v, 0);
+                        return <td key={c} style={{ padding: '9px 10px', textAlign: 'right', color: clrs[c] || '#94a3b8', fontWeight: 700 }}>₹{(t / 1000).toFixed(1)}k</td>;
+                      })}
+                      <td style={{ padding: '9px 12px', textAlign: 'right', color: pgColor, fontWeight: 800 }}>
+                        ₹{(Object.values(collectorTotals).reduce((s, m) => s + Object.values(m).reduce((ss, v) => ss + v, 0), 0) / 1000).toFixed(1)}k
                       </td>
-                    </tr>);
-                  })}
-                </tbody>
-              </table>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
           </div>
         </>)}
       </main>
-      <EditModal/>
-      <Toast toast={toast}/>
+
+      {/* Edit Modal */}
+      {editingTenant && <TenantModal tenant={editingTenant} selectedPG={selectedPG} pgColor={pgColor} isAdmin={isAdmin} onClose={() => setEditingTenant(null)} onSave={saveEdit} />}
+
+      <Toast toast={toast} />
+
+      {/* BOTTOM NAV */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0f1629', borderTop: '1px solid #1e293b', display: 'flex', zIndex: 50, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {[['dashboard', '📊', 'Overview'], ['tenants', '👥', 'Tenants'], ['monthly', '📅', 'Monthly'], ['collectors', '💼', 'Collect']].map(([v, ic, lbl]) => (
+          <button key={v} onClick={() => setView(v)} style={{ flex: 1, padding: '10px 4px 8px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+            <span style={{ fontSize: 20 }}>{ic}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: view === v ? pgColor : '#475569' }}>{lbl}</span>
+            {view === v && <div style={{ width: 20, height: 2, background: pgColor, borderRadius: 2 }} />}
+          </button>
+        ))}
+      </div>
     </div>
-  </>);
+  );
 }
-const Sbtn={background:'#111827',border:'1px solid #1e2d45',color:'#64748b',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontFamily:'Outfit,sans-serif',transition:'all .2s'};
+
+const S = {
+  root: { minHeight: '100vh', background: '#0a0f1e', color: '#e2e8f0', fontFamily: "'Inter',system-ui,sans-serif" },
+  header: { background: '#0f1629', borderBottom: '1px solid #1e293b', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, position: 'sticky', top: 0, zIndex: 100 },
+  logo: { fontSize: 16, fontWeight: 800, color: '#f8fafc' },
+  hBtn: { background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600 },
+  input: { width: '100%', background: '#0a0f1e', border: '1px solid #1e293b', color: '#e2e8f0', padding: '7px 10px', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' },
+  label: { fontSize: 10, color: '#64748b', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 },
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
+  modal: { background: '#111827', width: '100%', maxWidth: 640, borderRadius: '20px 20px 0 0', maxHeight: '94vh', overflowY: 'auto', padding: '20px 18px', boxShadow: '0 -8px 40px rgba(0,0,0,.6)' },
+  ghostBtn: { background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600 },
+  greenBtn: { background: '#22c55e', border: 'none', color: '#fff', padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13 },
+  blueBtn: { background: '#3b82f6', border: 'none', color: '#fff', padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 },
+  bigBtn: (bg, color = '#fff', pad = '13px 40px') => ({ background: bg, border: 'none', color, padding: pad, borderRadius: 14, cursor: 'pointer', fontWeight: 700, fontSize: 15, width: '100%', maxWidth: 280 }),
+};
