@@ -18,6 +18,68 @@ function fmtDate(d) {
 }
 function fmtNum(n) { return parseFloat(n || 0).toLocaleString('en-IN'); }
 
+// Clean phone → digits only, add +91 if needed
+function cleanPhone(raw) {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  if (!digits || digits.length < 10) return null;
+  // if starts with 91 and total 12 digits → already has country code
+  if (digits.startsWith('91') && digits.length === 12) return '+' + digits;
+  // take last 10 digits and prepend +91
+  return '+91' + digits.slice(-10);
+}
+
+// WhatsApp message builder
+function buildWAMsg(tenant, selectedMonth) {
+  const name = tenant.name;
+  const rent = tenant.rent ? `₹${fmtNum(tenant.rent)}` : 'aapka rent';
+  const paid = parseFloat(tenant.monthly?.[selectedMonth]?.amount) || 0;
+  const rentAmt = parseFloat(tenant.rent) || 0;
+  const due = rentAmt - paid;
+
+  if (due <= 0) {
+    return `Namaste ${name} ji 🙏\n\n${selectedMonth} ka rent receive ho gaya. Shukriya! 🏠✅`;
+  }
+  if (paid > 0 && due > 0) {
+    return `Namaste ${name} ji 🙏\n\n${selectedMonth} ka baaki rent ₹${fmtNum(due)} abhi pending hai.\n\nPlease jaldi se de dein. 🏠\n\nShukriya!`;
+  }
+  return `Namaste ${name} ji 🙏\n\n${selectedMonth} ka rent ${rent} abhi tak nahi aaya.\n\nKripya jaldi se bhej dein. 🏠\n\nShukriya!`;
+}
+
+// Call + WhatsApp Buttons (accessible to ALL roles)
+function ContactButtons({ contact, tenant, selectedMonth, style = {} }) {
+  const phone = cleanPhone(contact);
+  if (!phone) return null;
+
+  const waMsg = buildWAMsg(tenant, selectedMonth);
+  const waUrl = `https://wa.me/${phone.replace('+', '')}?text=${encodeURIComponent(waMsg)}`;
+  const callUrl = `tel:${phone}`;
+
+  return (
+    <div style={{ display: 'flex', gap: 6, ...style }} onClick={e => e.stopPropagation()}>
+      <a href={callUrl} style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        background: '#16a34a22', border: '1px solid #16a34a66',
+        color: '#22c55e', padding: '5px 10px', borderRadius: 8,
+        textDecoration: 'none', fontSize: 12, fontWeight: 700,
+        whiteSpace: 'nowrap',
+      }}>
+        📞 Call
+      </a>
+      <a href={waUrl} target="_blank" rel="noopener noreferrer" style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        background: '#15803d22', border: '1px solid #25d36666',
+        color: '#25d366', padding: '5px 10px', borderRadius: 8,
+        textDecoration: 'none', fontSize: 12, fontWeight: 700,
+        whiteSpace: 'nowrap',
+      }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="#25d366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        WhatsApp
+      </a>
+    </div>
+  );
+}
+
 function Input({ label, value, onChange, type = 'text', placeholder = '', disabled = false }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -88,7 +150,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) {
+function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave, selectedMonth }) {
   const [form, setForm] = useState({ ...tenant });
   const [monthly, setMonthly] = useState(JSON.parse(JSON.stringify(tenant.monthly || emptyMonthly())));
   const [tab, setTab] = useState('info');
@@ -100,16 +162,20 @@ function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) 
     <div style={S.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={S.modal}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 17 }}>{tenant.name}</div>
             <div style={{ fontSize: 11, color: '#64748b' }}>{selectedPG} • {isActive ? '🟢 Active' : '🔴 Left'} • Joined {fmtDate(tenant.dateJoining)}</div>
+            {tenant.contact && <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>📞 {tenant.contact}</div>}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {!isAdmin && <Pill c="#3b82f6" bg="#3b82f622">👁 View</Pill>}
             <button onClick={onClose} style={{ ...S.ghostBtn, fontSize: 15, padding: '4px 10px' }}>✕</button>
           </div>
         </div>
+
+        {/* Call + WhatsApp — visible to ALL roles */}
+        <ContactButtons contact={form.contact} tenant={tenant} selectedMonth={selectedMonth} style={{ marginBottom: 12 }} />
 
         {/* Summary Strip */}
         <div style={{ display: 'flex', gap: 1, marginBottom: 14, background: '#0a0f1e', borderRadius: 12, overflow: 'hidden' }}>
@@ -434,7 +500,7 @@ export default function App() {
                   const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
                   const rent = parseFloat(t.rent) || 0;
                   return (
-                    <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
+                    <div key={t.name} onClick={() => setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: 'pointer' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
                         <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • ₹{fmtNum(t.rent)}/mo</div>
@@ -454,7 +520,7 @@ export default function App() {
               {depositPending.length === 0
                 ? <div style={{ color: '#22c55e', fontSize: 13, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
                 : depositPending.map(t => (
-                  <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
+                  <div key={t.name} onClick={() => setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: 'pointer' }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
                       <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • Rent ₹{fmtNum(t.rent)}</div>
@@ -529,7 +595,7 @@ export default function App() {
             const rc = { unpaid: '#ef4444', half: '#f59e0b', full: '#22c55e' }[rs];
             const rl = { unpaid: 'Not Paid', half: `Half ₹${fmtNum(paid)}`, full: `✅ ₹${fmtNum(paid)}` }[rs];
             return (
-              <div key={t.name + t.dateJoining} onClick={() => isAdmin && setEditingTenant(t)} style={{ background: '#111827', borderRadius: 14, padding: '13px 14px', border: `1px solid ${rs !== 'full' && isActive ? rc + '55' : '#1e293b'}`, cursor: isAdmin ? 'pointer' : 'default', marginBottom: 8 }}>
+              <div key={t.name + t.dateJoining} onClick={() => setEditingTenant(t)} style={{ background: '#111827', borderRadius: 14, padding: '13px 14px', border: `1px solid ${rs !== 'full' && isActive ? rc + '55' : '#1e293b'}`, cursor: 'pointer', marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -546,6 +612,8 @@ export default function App() {
                       {hasDeposit && <span style={{ fontSize: 11, color: '#94a3b8' }}>Dep <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.deposit)}</b></span>}
                     </div>
                     {t.note && <div style={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', marginTop: 3 }}>💬 {t.note}</div>}
+                    {/* Call + WhatsApp — ALL roles can use */}
+                    <ContactButtons contact={t.contact} tenant={t} selectedMonth={selectedMonth} style={{ marginTop: 8 }} />
                   </div>
                   <div style={{ textAlign: 'right', marginLeft: 10, flexShrink: 0 }}>
                     <div style={{ color: rc, fontWeight: 700, fontSize: 13 }}>{rl}</div>
@@ -587,7 +655,7 @@ export default function App() {
                 const sc = paid === 0 ? '#ef4444' : paid < rent ? '#f59e0b' : '#22c55e';
                 const sl = paid === 0 ? 'Not Paid' : paid < rent ? `₹${fmtNum(paid)} (Half)` : `✅ ₹${fmtNum(paid)}`;
                 return (
-                  <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', borderBottom: '1px solid #0a0f1e', cursor: isAdmin ? 'pointer' : 'default' }}>
+                  <div key={t.name} onClick={() => setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', borderBottom: '1px solid #0a0f1e', cursor: 'pointer' }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
                       <div style={{ fontSize: 11, color: '#64748b' }}>₹{fmtNum(t.rent)}/mo{t.monthly?.[selectedMonth]?.collector ? ` • ${t.monthly[selectedMonth].collector}` : ''}</div>
@@ -680,7 +748,7 @@ export default function App() {
       </main>
 
       {/* Edit Modal */}
-      {editingTenant && <TenantModal tenant={editingTenant} selectedPG={selectedPG} pgColor={pgColor} isAdmin={isAdmin} onClose={() => setEditingTenant(null)} onSave={saveEdit} />}
+      {editingTenant && <TenantModal tenant={editingTenant} selectedPG={selectedPG} pgColor={pgColor} isAdmin={isAdmin} onClose={() => setEditingTenant(null)} onSave={saveEdit} selectedMonth={selectedMonth} />}
 
       <Toast toast={toast} />
 
