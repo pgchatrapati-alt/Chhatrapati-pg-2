@@ -1,5 +1,5 @@
 {
-  "name": "chhatrapati-pg",
+  "name": "pg-tenant-manager",
   "version": "1.0.0",
   "private": true,
   "scripts": {
