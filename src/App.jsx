@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 
+<<<<<<< HEAD
 /* ── Unsplash fallback images ── */
 const DEFAULT_IMGS = {
   room1: 'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=900&q=80',
@@ -12,6 +13,121 @@ const DEFAULT_IMGS = {
   hero:   'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=1600&q=80',
   outside:'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=900&q=80',
   common: 'https://images.unsplash.com/photo-1554995207-c18c203602cb?w=900&q=80',
+=======
+const COLLECTORS = ['Vishnu', 'Mahendra', 'Cash/other'];
+const ADMIN_PASSWORD = 'admin123';
+
+function emptyMonthly() {
+  const obj = {};
+  MONTHS.forEach(m => { obj[m] = { amount: '', halfFull: '', collector: '', note: '' }; });
+  return obj;
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  try { return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }); }
+  catch { return d; }
+}
+function fmtNum(n) { return parseFloat(n || 0).toLocaleString('en-IN'); }
+
+// Clean phone → digits only, add +91 if needed
+function cleanPhone(raw) {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  if (!digits || digits.length < 10) return null;
+  // if starts with 91 and total 12 digits → already has country code
+  if (digits.startsWith('91') && digits.length === 12) return '+' + digits;
+  // take last 10 digits and prepend +91
+  return '+91' + digits.slice(-10);
+}
+
+// WhatsApp message builder
+function buildWAMsg(tenant, selectedMonth) {
+  const name = tenant.name;
+  const rent = tenant.rent ? `₹${fmtNum(tenant.rent)}` : 'aapka rent';
+  const paid = parseFloat(tenant.monthly?.[selectedMonth]?.amount) || 0;
+  const rentAmt = parseFloat(tenant.rent) || 0;
+  const due = rentAmt - paid;
+
+  if (due <= 0) {
+    return `Namaste ${name} ji 🙏\n\n${selectedMonth} ka rent receive ho gaya. Shukriya! 🏠✅`;
+  }
+  if (paid > 0 && due > 0) {
+    return `Namaste ${name} ji 🙏\n\n${selectedMonth} ka baaki rent ₹${fmtNum(due)} abhi pending hai.\n\nPlease jaldi se de dein. 🏠\n\nShukriya!`;
+  }
+  return `Namaste ${name} ji 🙏\n\n${selectedMonth} ka rent ${rent} abhi tak nahi aaya.\n\nKripya jaldi se bhej dein. 🏠\n\nShukriya!`;
+}
+
+// Call + WhatsApp Buttons (accessible to ALL roles)
+function ContactButtons({ contact, tenant, selectedMonth, style = {} }) {
+  const phone = cleanPhone(contact);
+  if (!phone) return null;
+
+  const waMsg = buildWAMsg(tenant, selectedMonth);
+  const waUrl = `https://wa.me/${phone.replace('+', '')}?text=${encodeURIComponent(waMsg)}`;
+  const callUrl = `tel:${phone}`;
+
+  return (
+    <div style={{ display: 'flex', gap: 6, ...style }} onClick={e => e.stopPropagation()}>
+      <a href={callUrl} style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        background: '#16a34a22', border: '1px solid #16a34a66',
+        color: '#22c55e', padding: '5px 10px', borderRadius: 8,
+        textDecoration: 'none', fontSize: 12, fontWeight: 700,
+        whiteSpace: 'nowrap',
+      }}>
+        📞 Call
+      </a>
+      <a href={waUrl} target="_blank" rel="noopener noreferrer" style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        background: '#15803d22', border: '1px solid #25d36666',
+        color: '#25d366', padding: '5px 10px', borderRadius: 8,
+        textDecoration: 'none', fontSize: 12, fontWeight: 700,
+        whiteSpace: 'nowrap',
+      }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="#25d366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        WhatsApp
+      </a>
+    </div>
+  );
+}
+
+function Input({ label, value, onChange, type = 'text', placeholder = '', disabled = false }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {label && <div style={S.label}>{label}</div>}
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
+        style={{ ...S.input, opacity: disabled ? 0.5 : 1 }} />
+    </div>
+  );
+}
+function Sel({ label, value, onChange, options, disabled = false }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {label && <div style={S.label}>{label}</div>}
+      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ ...S.input, opacity: disabled ? 0.5 : 1 }}>
+        <option value="">—</option>
+        {options.map(o => <option key={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+function Pill({ children, c = '#94a3b8', bg = '#33415533' }) {
+  return <span style={{ fontSize: 9, background: bg, color: c, padding: '2px 7px', borderRadius: 8, fontWeight: 700 }}>{children}</span>;
+}
+function Toast({ toast }) {
+  if (!toast) return null;
+  const bg = { error: '#ef4444', warn: '#f59e0b', info: '#3b82f6', success: '#22c55e' }[toast.type] || '#22c55e';
+  return <div style={{ position: 'fixed', bottom: 76, left: '50%', transform: 'translateX(-50%)', background: bg, color: '#fff', padding: '10px 22px', borderRadius: 24, fontWeight: 600, fontSize: 13, zIndex: 600, boxShadow: '0 4px 24px rgba(0,0,0,.5)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>{toast.msg}</div>;
+}
+function MonthBar({ sel, setSel, clr }) {
+  const ref = useRef(null);
+  useEffect(() => { const el = ref.current; if (!el) return; const b = el.querySelector(`[data-m="${sel}"]`); if (b) b.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); }, [sel]);
+  return (
+    <div ref={ref} style={{ display: 'flex', gap: 5, overflowX: 'auto', padding: '8px 14px', background: '#0a0f1e', borderBottom: '1px solid #1e293b', scrollbarWidth: 'none' }}>
+      {MONTHS.map(m => <button key={m} data-m={m} onClick={() => setSel(m)} style={{ padding: '4px 11px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', background: sel === m ? clr : '#111827', color: sel === m ? '#fff' : '#64748b', boxShadow: sel === m ? `0 0 8px ${clr}66` : 'none' }}>{m.slice(0, 3)}</button>)}
+    </div>
+  );
+>>>>>>> 56913c651001b2281543ed27691a7597f6a26d42
 }
 
 const ADMIN_PASS = 'pg2025'
@@ -56,6 +172,7 @@ function Lightbox({imgs,idx,onClose}){
   );
 }
 
+<<<<<<< HEAD
 /* ── Admin Panel ── */
 function AdminPanel({siteData,setSiteData,onClose}){
   const[tab,setTab]=useState('rooms');
@@ -75,11 +192,36 @@ function AdminPanel({siteData,setSiteData,onClose}){
           <button onClick={()=>{if(pw===ADMIN_PASS)setAuth(true);else{setErr('Wrong password');setTimeout(()=>setErr(''),1500);}}}
             style={{flex:1,background:'linear-gradient(135deg,#c8763a,#f5c842)',border:'none',color:'#2d1a0a',padding:'10px',borderRadius:10,cursor:'pointer',fontWeight:700,fontSize:14}}>Login</button>
           <button onClick={onClose} style={{background:'#2d1a0a',border:'1px solid #5a3010',color:'#9a7a5a',padding:'10px 14px',borderRadius:10,cursor:'pointer',fontSize:14}}>✕</button>
+=======
+function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave, selectedMonth }) {
+  const [form, setForm] = useState({ ...tenant });
+  const [monthly, setMonthly] = useState(JSON.parse(JSON.stringify(tenant.monthly || emptyMonthly())));
+  const [tab, setTab] = useState('info');
+  const setM = (m, f, v) => setMonthly(p => ({ ...p, [m]: { ...p[m], [f]: v } }));
+  const totalPaid = MONTHS.reduce((s, m) => s + (parseFloat(monthly[m]?.amount) || 0), 0);
+  const isActive = !tenant.dateLeaving || new Date(tenant.dateLeaving) >= new Date();
+
+  return (
+    <div style={S.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={S.modal}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 17 }}>{tenant.name}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>{selectedPG} • {isActive ? '🟢 Active' : '🔴 Left'} • Joined {fmtDate(tenant.dateJoining)}</div>
+            {tenant.contact && <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>📞 {tenant.contact}</div>}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {!isAdmin && <Pill c="#3b82f6" bg="#3b82f622">👁 View</Pill>}
+            <button onClick={onClose} style={{ ...S.ghostBtn, fontSize: 15, padding: '4px 10px' }}>✕</button>
+          </div>
+>>>>>>> 56913c651001b2281543ed27691a7597f6a26d42
         </div>
       </div>
     </div>
   );
 
+<<<<<<< HEAD
   function addPhoto(section,url,label){
     if(!url.trim())return;
     const next={...siteData,[section]:[...(siteData[section]||[]),{url:url.trim(),label:label||''}]};
@@ -101,6 +243,23 @@ function AdminPanel({siteData,setSiteData,onClose}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:'#fff'}}>⚙️ Admin Panel</div>
           <button onClick={onClose} style={{background:'#2d1a0a',border:'1px solid #5a3010',color:'#9a7a5a',padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:13}}>Close</button>
+=======
+        {/* Call + WhatsApp — visible to ALL roles */}
+        <ContactButtons contact={form.contact} tenant={tenant} selectedMonth={selectedMonth} style={{ marginBottom: 12 }} />
+
+        {/* Summary Strip */}
+        <div style={{ display: 'flex', gap: 1, marginBottom: 14, background: '#0a0f1e', borderRadius: 12, overflow: 'hidden' }}>
+          {[
+            { label: 'Total Paid', val: `₹${fmtNum(totalPaid)}`, c: '#22c55e' },
+            { label: 'Monthly Rent', val: `₹${fmtNum(form.rent)}`, c: pgColor },
+            { label: 'Deposit', val: form.deposit ? `₹${fmtNum(form.deposit)}` : '⚠ Pending', c: form.deposit ? '#f8fafc' : '#ef4444' },
+          ].map((x, i) => (
+            <div key={i} style={{ flex: 1, textAlign: 'center', padding: '10px 6px', borderRight: i < 2 ? '1px solid #1e293b' : 'none' }}>
+              <div style={{ fontSize: 10, color: '#64748b' }}>{x.label}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: x.c }}>{x.val}</div>
+            </div>
+          ))}
+>>>>>>> 56913c651001b2281543ed27691a7597f6a26d42
         </div>
         {/* Tabs */}
         <div style={{display:'flex',gap:4,background:'#1a0e05',borderRadius:12,padding:4,marginBottom:20,overflowX:'auto'}}>
@@ -354,6 +513,7 @@ function Rooms({siteData}){
           </div>
         </FadeIn>
 
+<<<<<<< HEAD
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:28}}>
           {ROOMS.map((r,i)=>{
             const price=r.basePrice+(withFood?3000:0);
@@ -379,6 +539,28 @@ function Rooms({siteData}){
                   </div>
                   <div style={{padding:'24px 24px 28px'}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
+=======
+          {/* Pending Details */}
+          <div style={{ background: '#111827', borderRadius: 14, padding: 14, border: '1px solid #1e293b' }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              {[['rent', '⏳ Rent'], ['deposit', '🔒 Deposit']].map(([t, lbl]) => (
+                <button key={t} onClick={() => setPendingTab(t)} style={{ flex: 1, padding: '7px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: pendingTab === t ? pgColor : '#0a0f1e', color: pendingTab === t ? '#fff' : '#64748b' }}>{lbl} Pending</button>
+              ))}
+            </div>
+
+            {pendingTab === 'rent' && (<>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: '#64748b' }}>{selectedMonth} — {rentPending.length} pending</span>
+                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>₹{fmtNum(rentPending.reduce((s, t) => s + ((parseFloat(t.rent) || 0) - (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)), 0))} due</span>
+              </div>
+              {rentPending.length === 0
+                ? <div style={{ color: '#22c55e', fontSize: 13, padding: '8px 0' }}>✅ Sab ne rent de diya!</div>
+                : rentPending.map(t => {
+                  const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
+                  const rent = parseFloat(t.rent) || 0;
+                  return (
+                    <div key={t.name} onClick={() => setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: 'pointer' }}>
+>>>>>>> 56913c651001b2281543ed27691a7597f6a26d42
                       <div>
                         <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:'#2d1a0a'}}>{r.type}</div>
                         <div style={{fontSize:11,color:'#9a7a5a',marginTop:2}}>Per person / month</div>
@@ -388,6 +570,7 @@ function Rooms({siteData}){
                         <div style={{fontSize:10,color:'#c8763a',fontWeight:600}}>{withFood?'food included':'+ food ₹3,000 extra'}</div>
                       </div>
                     </div>
+<<<<<<< HEAD
                     <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:22}}>
                       {r.features.map(f=>(
                         <div key={f} style={{display:'flex',alignItems:'center',gap:8}}>
@@ -405,17 +588,268 @@ function Rooms({siteData}){
                     <a href="tel:9405334300" style={{display:'block',textAlign:'center',background:active===i?'linear-gradient(135deg,#c8763a,#f5c842)':'#fdf0e0',color:active===i?'#fff':'#c8763a',padding:'12px',borderRadius:14,fontSize:13,fontWeight:700,textDecoration:'none',transition:'all .3s',border:'1.5px solid #e8c090'}}>
                       Book This Room →
                     </a>
+=======
+                  );
+                })
+              }
+            </>)}
+
+            {pendingTab === 'deposit' && (<>
+              <div style={{ marginBottom: 8 }}><span style={{ fontSize: 11, color: '#64748b' }}>{depositPending.length} tenants bina deposit ke</span></div>
+              {depositPending.length === 0
+                ? <div style={{ color: '#22c55e', fontSize: 13, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
+                : depositPending.map(t => (
+                  <div key={t.name} onClick={() => setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: 'pointer' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • Rent ₹{fmtNum(t.rent)}</div>
+                    </div>
+                    <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 12 }}>No Deposit ⚠</div>
+                  </div>
+                ))
+              }
+            </>)}
+          </div>
+        </>)}
+
+        {/* ══ TENANTS ══ */}
+        {view === 'tenants' && (<>
+          <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
+          <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search…" style={{ ...S.input, flex: 1, padding: '9px 12px' }} />
+            {isAdmin && <button onClick={() => setShowAddTenant(true)} style={{ background: pgColor, border: 'none', color: '#fff', padding: '9px 16px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>+ Add</button>}
+          </div>
+
+          {/* Quick stats */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
+            {[
+              { lbl: 'Active', val: active.length, c: '#22c55e' },
+              { lbl: `${selectedMonth.slice(0,3)} Paid`, val: active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) >= (parseFloat(t.rent) || 1)).length, c: '#22c55e' },
+              { lbl: 'Half Paid', val: halfPaid.length, c: '#f59e0b' },
+              { lbl: 'Not Paid', val: active.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)).length, c: '#ef4444' },
+              { lbl: 'No Deposit', val: depositPending.length, c: '#f59e0b' },
+            ].map(s => (
+              <div key={s.lbl} style={{ background: '#111827', borderRadius: 10, padding: '7px 14px', border: `1px solid ${s.c}33`, textAlign: 'center', flexShrink: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: s.c }}>{s.val}</div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>{s.lbl}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add Tenant Form */}
+          {showAddTenant && isAdmin && (
+            <div style={{ background: '#111827', borderRadius: 14, padding: 14, marginBottom: 14, border: `1px solid ${pgColor}66` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: '#94a3b8' }}>NEW TENANT — {selectedPG}</span>
+                <button onClick={() => setShowAddTenant(false)} style={{ ...S.ghostBtn, fontSize: 11 }}>Cancel</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input label="Naam *" value={newTenant.name} onChange={v => setNewTenant(p => ({ ...p, name: v }))} />
+                  <Input label="Contact" value={newTenant.contact} onChange={v => setNewTenant(p => ({ ...p, contact: v }))} />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input label="Deposit ₹" value={newTenant.deposit} onChange={v => setNewTenant(p => ({ ...p, deposit: v }))} />
+                  <Input label="Rent ₹/mo" value={newTenant.rent} onChange={v => setNewTenant(p => ({ ...p, rent: v }))} />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input label="Date Joining" type="date" value={newTenant.dateJoining} onChange={v => setNewTenant(p => ({ ...p, dateJoining: v }))} />
+                  <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
+                </div>
+                <Input label="Note" value={newTenant.note} onChange={v => setNewTenant(p => ({ ...p, note: v }))} />
+                <button onClick={addTenant} style={{ background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14, marginTop: 4 }}>
+                  ✅ Add Tenant + Auto Sync to Google Sheet
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tenant List */}
+          {filtered.map(t => {
+            const isActive = !t.dateLeaving || new Date(t.dateLeaving) >= new Date();
+            const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
+            const rent = parseFloat(t.rent) || 0;
+            const hasDeposit = t.deposit && t.deposit !== '' && t.deposit !== '0';
+            const rs = paid === 0 ? 'unpaid' : paid < rent ? 'half' : 'full';
+            const rc = { unpaid: '#ef4444', half: '#f59e0b', full: '#22c55e' }[rs];
+            const rl = { unpaid: 'Not Paid', half: `Half ₹${fmtNum(paid)}`, full: `✅ ₹${fmtNum(paid)}` }[rs];
+            return (
+              <div key={t.name + t.dateJoining} onClick={() => setEditingTenant(t)} style={{ background: '#111827', borderRadius: 14, padding: '13px 14px', border: `1px solid ${rs !== 'full' && isActive ? rc + '55' : '#1e293b'}`, cursor: 'pointer', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 15, color: isActive ? '#f1f5f9' : '#64748b' }}>{t.name}</span>
+                      {!isActive && <Pill>Left</Pill>}
+                      {!hasDeposit && isActive && <Pill c="#f59e0b" bg="#f59e0b22">No Dep</Pill>}
+                      {rs === 'half' && isActive && <Pill c="#f59e0b" bg="#f59e0b22">Half</Pill>}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
+                      📅 {fmtDate(t.dateJoining)} {t.contact && `• 📞 ${t.contact}`}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Rent <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.rent)}</b></span>
+                      {hasDeposit && <span style={{ fontSize: 11, color: '#94a3b8' }}>Dep <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.deposit)}</b></span>}
+                    </div>
+                    {t.note && <div style={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', marginTop: 3 }}>💬 {t.note}</div>}
+                    {/* Call + WhatsApp — ALL roles can use */}
+                    <ContactButtons contact={t.contact} tenant={t} selectedMonth={selectedMonth} style={{ marginTop: 8 }} />
+                  </div>
+                  <div style={{ textAlign: 'right', marginLeft: 10, flexShrink: 0 }}>
+                    <div style={{ color: rc, fontWeight: 700, fontSize: 13 }}>{rl}</div>
+                    {t.monthly?.[selectedMonth]?.collector && <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{t.monthly[selectedMonth].collector}</div>}
+>>>>>>> 56913c651001b2281543ed27691a7597f6a26d42
                   </div>
                 </div>
               </FadeIn>
             );
           })}
+<<<<<<< HEAD
         </div>
         <FadeIn delay={200}>
           <div style={{textAlign:'center',marginTop:32,padding:'16px 24px',background:'#fef5e4',borderRadius:16,border:'1px solid #f0d8a0'}}>
             <div style={{fontSize:13,color:'#7a5020',lineHeight:1.7}}>⚡ <strong>Light bill excluded</strong> — All other utilities & amenities included. Food +₹3,000/month optional.</div>
           </div>
         </FadeIn>
+=======
+          {filtered.length === 0 && <div style={{ textAlign: 'center', color: '#475569', padding: 32 }}>No tenants found</div>}
+        </>)}
+
+        {/* ══ MONTHLY ══ */}
+        {view === 'monthly' && (<>
+          <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <div style={{ flex: 1, background: '#111827', borderRadius: 12, padding: 12, border: `1px solid ${pgColor}44`, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#64748b' }}>Collected</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: pgColor }}>₹{fmtNum(collected)}</div>
+              </div>
+              <div style={{ flex: 1, background: '#111827', borderRadius: 12, padding: 12, border: '1px solid #ef444444', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#64748b' }}>Remaining</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#ef4444' }}>₹{fmtNum(Math.max(0, totalRent - collected))}</div>
+              </div>
+              <div style={{ flex: 1, background: '#111827', borderRadius: 12, padding: 12, border: '1px solid #f59e0b44', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#64748b' }}>Half Paid</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#f59e0b' }}>{halfPaid.length}</div>
+              </div>
+            </div>
+            <div style={{ background: '#111827', borderRadius: 14, overflow: 'hidden', border: '1px solid #1e293b' }}>
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 700 }}>{selectedPG} — {selectedMonth}</span>
+                <span style={{ color: pgColor, fontWeight: 700 }}>{active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) >= (parseFloat(t.rent) || 1)).length}/{active.length} paid</span>
+              </div>
+              {active.map(t => {
+                const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
+                const rent = parseFloat(t.rent) || 0;
+                const sc = paid === 0 ? '#ef4444' : paid < rent ? '#f59e0b' : '#22c55e';
+                const sl = paid === 0 ? 'Not Paid' : paid < rent ? `₹${fmtNum(paid)} (Half)` : `✅ ₹${fmtNum(paid)}`;
+                return (
+                  <div key={t.name} onClick={() => setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', borderBottom: '1px solid #0a0f1e', cursor: 'pointer' }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>₹{fmtNum(t.rent)}/mo{t.monthly?.[selectedMonth]?.collector ? ` • ${t.monthly[selectedMonth].collector}` : ''}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ color: sc, fontWeight: 700, fontSize: 13 }}>{sl}</div>
+                      {paid > 0 && paid < rent && <div style={{ fontSize: 10, color: '#ef4444' }}>₹{fmtNum(rent - paid)} due</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>)}
+
+        {/* ══ COLLECTORS ══ */}
+        {view === 'collectors' && (<>
+          <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
+              {Object.entries(collectorTotals).map(([col, months]) => {
+                const clrs = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b' };
+                const c = clrs[col] || '#94a3b8';
+                const mAmt = months[selectedMonth] || 0;
+                const yTotal = Object.values(months).reduce((s, v) => s + v, 0);
+                return (
+                  <div key={col} style={{ background: `linear-gradient(135deg,${c}14,#111827)`, borderRadius: 14, padding: '12px 10px', border: `1px solid ${c}44` }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: c, marginBottom: 4 }}>{col.split('/')[0]}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800 }}>₹{(mAmt / 1000).toFixed(1)}k</div>
+                    <div style={{ fontSize: 9, color: '#64748b' }}>{selectedMonth}</div>
+                    <div style={{ marginTop: 6, borderTop: `1px solid ${c}22`, paddingTop: 6 }}>
+                      <div style={{ fontSize: 9, color: '#94a3b8' }}>Year</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: c }}>₹{(yTotal / 1000).toFixed(1)}k</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ background: '#111827', borderRadius: 14, overflow: 'hidden', border: '1px solid #1e293b' }}>
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid #1e293b', fontWeight: 700, fontSize: 13 }}>📅 Month-wise Collection</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#0a0f1e' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontSize: 11 }}>Month</th>
+                      {Object.keys(collectorTotals).map(c => {
+                        const clrs = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b' };
+                        return <th key={c} style={{ padding: '8px 10px', textAlign: 'right', color: clrs[c] || '#94a3b8', fontSize: 11 }}>{c.split('/')[0]}</th>;
+                      })}
+                      <th style={{ padding: '8px 12px', textAlign: 'right', color: '#94a3b8', fontSize: 11 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {MONTHS.map(m => {
+                      const rowTotal = Object.values(collectorTotals).reduce((s, months) => s + (months[m] || 0), 0);
+                      return (
+                        <tr key={m} onClick={() => setSelectedMonth(m)} style={{ borderTop: '1px solid #0a0f1e', background: m === selectedMonth ? '#ffffff08' : 'transparent', cursor: 'pointer' }}>
+                          <td style={{ padding: '9px 12px', color: m === selectedMonth ? pgColor : '#94a3b8', fontWeight: m === selectedMonth ? 700 : 400 }}>{m.slice(0, 3)}</td>
+                          {Object.entries(collectorTotals).map(([c, months]) => (
+                            <td key={c} style={{ padding: '9px 10px', textAlign: 'right', color: months[m] ? '#f1f5f9' : '#334155' }}>
+                              {months[m] ? `₹${(months[m] / 1000).toFixed(1)}k` : '—'}
+                            </td>
+                          ))}
+                          <td style={{ padding: '9px 12px', textAlign: 'right', color: rowTotal ? pgColor : '#334155', fontWeight: 700 }}>
+                            {rowTotal ? `₹${(rowTotal / 1000).toFixed(1)}k` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid #1e293b', background: '#0a0f1e' }}>
+                      <td style={{ padding: '9px 12px', color: '#94a3b8', fontWeight: 700, fontSize: 11 }}>TOTAL</td>
+                      {Object.entries(collectorTotals).map(([c, months]) => {
+                        const clrs = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b' };
+                        const t = Object.values(months).reduce((s, v) => s + v, 0);
+                        return <td key={c} style={{ padding: '9px 10px', textAlign: 'right', color: clrs[c] || '#94a3b8', fontWeight: 700 }}>₹{(t / 1000).toFixed(1)}k</td>;
+                      })}
+                      <td style={{ padding: '9px 12px', textAlign: 'right', color: pgColor, fontWeight: 800 }}>
+                        ₹{(Object.values(collectorTotals).reduce((s, m) => s + Object.values(m).reduce((ss, v) => ss + v, 0), 0) / 1000).toFixed(1)}k
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        </>)}
+      </main>
+
+      {/* Edit Modal */}
+      {editingTenant && <TenantModal tenant={editingTenant} selectedPG={selectedPG} pgColor={pgColor} isAdmin={isAdmin} onClose={() => setEditingTenant(null)} onSave={saveEdit} selectedMonth={selectedMonth} />}
+
+      <Toast toast={toast} />
+
+      {/* BOTTOM NAV */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0f1629', borderTop: '1px solid #1e293b', display: 'flex', zIndex: 50, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {[['dashboard', '📊', 'Overview'], ['tenants', '👥', 'Tenants'], ['monthly', '📅', 'Monthly'], ['collectors', '💼', 'Collect']].map(([v, ic, lbl]) => (
+          <button key={v} onClick={() => setView(v)} style={{ flex: 1, padding: '10px 4px 8px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+            <span style={{ fontSize: 20 }}>{ic}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: view === v ? pgColor : '#475569' }}>{lbl}</span>
+            {view === v && <div style={{ width: 20, height: 2, background: pgColor, borderRadius: 2 }} />}
+          </button>
+        ))}
+>>>>>>> 56913c651001b2281543ed27691a7597f6a26d42
       </div>
       {lightbox&&<Lightbox imgs={lightbox.imgs} idx={lightbox.idx} onClose={()=>setLightbox(null)}/>}
     </section>
