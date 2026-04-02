@@ -18,7 +18,6 @@ function fmtDate(d) {
   catch { return d; }
 }
 
-<<<<<<< HEAD
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -67,9 +66,6 @@ function Inp({ label, value, onChange, type='text', placeholder='', disabled=fal
   );
 }
 function Sel({ label, value, onChange, options, disabled=false }) {
-=======
-function Input({ label, value, onChange, type = 'text', placeholder = '', disabled = false }) {
->>>>>>> e58d82b6de0d615a3ac9ffc1f352a3550ba38bf1
   return (
     <div>
       {label && <div style={{fontSize:10,color:'#64748b',marginBottom:3,fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase'}}>{label}</div>}
@@ -124,116 +120,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-<<<<<<< HEAD
 // ── Main App ───────────────────────────────────────────────────
-=======
-function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) {
-  const [form, setForm] = useState({ ...tenant });
-  const [monthly, setMonthly] = useState(JSON.parse(JSON.stringify(tenant.monthly || emptyMonthly())));
-  const [tab, setTab] = useState('info');
-  const setM = (m, f, v) => setMonthly(p => ({ ...p, [m]: { ...p[m], [f]: v } }));
-  const totalPaid = MONTHS.reduce((s, m) => s + (parseFloat(monthly[m]?.amount) || 0), 0);
-  const isActive = !tenant.dateLeaving || new Date(tenant.dateLeaving) >= new Date();
-
-  return (
-    <div style={S.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={S.modal}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>{tenant.name}</div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>{selectedPG} • {isActive ? '🟢 Active' : '🔴 Left'} • Joined {fmtDate(tenant.dateJoining)}</div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {!isAdmin && <Pill c="#3b82f6" bg="#3b82f622">👁 View</Pill>}
-            <button onClick={onClose} style={{ ...S.ghostBtn, fontSize: 15, padding: '4px 10px' }}>✕</button>
-          </div>
-        </div>
-
-        {/* Summary Strip */}
-        <div style={{ display: 'flex', gap: 1, marginBottom: 14, background: '#0a0f1e', borderRadius: 12, overflow: 'hidden' }}>
-          {[
-            { label: 'Total Paid', val: `₹${fmtNum(totalPaid)}`, c: '#22c55e' },
-            { label: 'Monthly Rent', val: `₹${fmtNum(form.rent)}`, c: pgColor },
-            { label: 'Deposit', val: form.deposit ? `₹${fmtNum(form.deposit)}` : '⚠ Pending', c: form.deposit ? '#f8fafc' : '#ef4444' },
-          ].map((x, i) => (
-            <div key={i} style={{ flex: 1, textAlign: 'center', padding: '10px 6px', borderRight: i < 2 ? '1px solid #1e293b' : 'none' }}>
-              <div style={{ fontSize: 10, color: '#64748b' }}>{x.label}</div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: x.c }}>{x.val}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: '#0a0f1e', borderRadius: 10, padding: 4 }}>
-          {[['info', '📋 Info'], ['monthly', '📅 Payments']].map(([t, lbl]) => (
-            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: tab === t ? pgColor : 'transparent', color: tab === t ? '#fff' : '#64748b' }}>{lbl}</button>
-          ))}
-        </div>
-
-        {tab === 'info' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Input label="Contact" value={form.contact || ''} onChange={v => setForm(p => ({ ...p, contact: v }))} disabled={!isAdmin} />
-              <Input label="Deposit ₹" value={form.deposit || ''} onChange={v => setForm(p => ({ ...p, deposit: v }))} disabled={!isAdmin} />
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Input label="Rent ₹/mo" value={form.rent || ''} onChange={v => setForm(p => ({ ...p, rent: v }))} disabled={!isAdmin} />
-              <Input label="Note" value={form.note || ''} onChange={v => setForm(p => ({ ...p, note: v }))} disabled={!isAdmin} />
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Input label="Date Joining" type="date" value={form.dateJoining || ''} onChange={v => setForm(p => ({ ...p, dateJoining: v }))} disabled={!isAdmin} />
-              <Input label="Date Leaving" type="date" value={form.dateLeaving || ''} onChange={v => setForm(p => ({ ...p, dateLeaving: v }))} disabled={!isAdmin} />
-            </div>
-          </div>
-        )}
-
-        {tab === 'monthly' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {MONTHS.map(m => {
-              const md = monthly[m] || { amount: '', halfFull: '', collector: '', note: '' };
-              const paid = parseFloat(md.amount) || 0;
-              const rent = parseFloat(form.rent) || 0;
-              const tc = paid === 0 ? '#475569' : paid < rent ? '#f59e0b' : pgColor;
-              const borderClr = paid === 0 ? '#1e293b' : paid < rent ? '#f59e0b44' : `${pgColor}44`;
-              return (
-                <div key={m} style={{ background: '#0a0f1e', borderRadius: 10, padding: '10px 12px', border: `1px solid ${borderClr}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: isAdmin ? 8 : 0 }}>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: tc }}>{m}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: tc }}>
-                      {paid > 0 ? `₹${fmtNum(paid)}${paid < rent ? ' (Half)' : ' ✓'}` : 'Not Paid'}
-                    </span>
-                  </div>
-                  {isAdmin && (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <Input label="₹ Amount" value={md.amount} onChange={v => setM(m, 'amount', v)} />
-                      <Sel label="Half/Full" value={md.halfFull} onChange={v => setM(m, 'halfFull', v)} options={['Full', 'Half']} />
-                      <Sel label="Collector" value={md.collector} onChange={v => setM(m, 'collector', v)} options={COLLECTORS} />
-                      <Input label="Note" value={md.note} onChange={v => setM(m, 'note', v)} />
-                    </div>
-                  )}
-                  {!isAdmin && paid > 0 && <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{[md.collector, md.note].filter(Boolean).join(' • ')}</div>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Footer */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '1px solid #1e293b' }}>
-          {isAdmin
-            ? <button onClick={() => onSave({ ...form, monthly })} style={{ flex: 1, background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>💾 Save + Auto Sync</button>
-            : <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: '#64748b', padding: 12 }}>👁 Viewer mode</div>
-          }
-          <button onClick={onClose} style={S.ghostBtn}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ═══ MAIN APP ═══
->>>>>>> e58d82b6de0d615a3ac9ffc1f352a3550ba38bf1
 export default function App() {
   const [pgData,setPgData] = useLocalStorage('pgData',INITIAL_DATA);
   const [webAppUrl,setWebAppUrl] = useLocalStorage('webAppUrl','');
@@ -443,7 +330,6 @@ export default function App() {
             </div>
           </div>
 
-<<<<<<< HEAD
           <div style={{padding:'0 20px 28px'}}>
 
             {/* PAYMENTS TAB */}
@@ -460,23 +346,6 @@ export default function App() {
                         <div style={{fontWeight:700,fontSize:13,color:paid>0?ac:'#475569'}}>{m}</div>
                         {paid>0&&<div style={{fontSize:10,color:paid<rent?'#f59e0b':'#22c55e',fontWeight:700,background:(paid<rent?'#f59e0b':'#22c55e')+'18',padding:'2px 8px',borderRadius:20}}>{paid<rent?'Half':'Full'} • ₹{paid.toLocaleString()}</div>}
                         {paid===0&&<div style={{fontSize:10,color:'#475569',background:'#1e2d4555',padding:'2px 8px',borderRadius:20}}>Not paid</div>}
-=======
-            {pendingTab === 'rent' && (<>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 11, color: '#64748b' }}>{selectedMonth} — {rentPending.length} pending</span>
-                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>₹{fmtNum(rentPending.reduce((s, t) => s + ((parseFloat(t.rent) || 0) - (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)), 0))} due</span>
-              </div>
-              {rentPending.length === 0
-                ? <div style={{ color: '#22c55e', fontSize: 13, padding: '8px 0' }}>✅ Sab ne rent de diya!</div>
-                : rentPending.map(t => {
-                  const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
-                  const rent = parseFloat(t.rent) || 0;
-                  return (
-                    <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
-                        <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • ₹{fmtNum(t.rent)}/mo</div>
->>>>>>> e58d82b6de0d615a3ac9ffc1f352a3550ba38bf1
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:6}}>
                         <Inp label="₹ Amount" value={md.amount} onChange={v=>set('amount',v)} disabled={!isAdmin}/>
@@ -490,7 +359,6 @@ export default function App() {
               </>
             )}
 
-<<<<<<< HEAD
             {/* INFO TAB */}
             {editTab==='info'&&(
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
@@ -500,46 +368,6 @@ export default function App() {
                 <Inp label="Note" value={editForm.note||''} onChange={v=>setEditForm(p=>({...p,note:v}))} disabled={!isAdmin}/>
                 <Inp label="Joining Date" type="date" value={editForm.dateJoining||''} onChange={v=>setEditForm(p=>({...p,dateJoining:v}))} disabled={!isAdmin}/>
                 <Inp label="Leaving Date" type="date" value={editForm.dateLeaving||''} onChange={v=>setEditForm(p=>({...p,dateLeaving:v}))} disabled={!isAdmin}/>
-=======
-            {pendingTab === 'deposit' && (<>
-              <div style={{ marginBottom: 8 }}><span style={{ fontSize: 11, color: '#64748b' }}>{depositPending.length} tenants bina deposit ke</span></div>
-              {depositPending.length === 0
-                ? <div style={{ color: '#22c55e', fontSize: 13, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
-                : depositPending.map(t => (
-                  <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
-                      <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • Rent ₹{fmtNum(t.rent)}</div>
-                    </div>
-                    <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 12 }}>No Deposit ⚠</div>
-                  </div>
-                ))
-              }
-            </>)}
-          </div>
-        </>)}
-
-        {/* ══ TENANTS ══ */}
-        {view === 'tenants' && (<>
-          <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
-          <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search…" style={{ ...S.input, flex: 1, padding: '9px 12px' }} />
-            {isAdmin && <button onClick={() => setShowAddTenant(true)} style={{ background: pgColor, border: 'none', color: '#fff', padding: '9px 16px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>+ Add</button>}
-          </div>
-
-          {/* Quick stats */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
-            {[
-              { lbl: 'Active', val: active.length, c: '#22c55e' },
-              { lbl: `${selectedMonth.slice(0,3)} Paid`, val: active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) >= (parseFloat(t.rent) || 1)).length, c: '#22c55e' },
-              { lbl: 'Half Paid', val: halfPaid.length, c: '#f59e0b' },
-              { lbl: 'Not Paid', val: active.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)).length, c: '#ef4444' },
-              { lbl: 'No Deposit', val: depositPending.length, c: '#f59e0b' },
-            ].map(s => (
-              <div key={s.lbl} style={{ background: '#111827', borderRadius: 10, padding: '7px 14px', border: `1px solid ${s.c}33`, textAlign: 'center', flexShrink: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: s.c }}>{s.val}</div>
-                <div style={{ fontSize: 10, color: '#64748b' }}>{s.lbl}</div>
->>>>>>> e58d82b6de0d615a3ac9ffc1f352a3550ba38bf1
               </div>
             )}
 
@@ -555,7 +383,6 @@ export default function App() {
     );
   }
 
-<<<<<<< HEAD
   // ── PG Detail ───────────────────────────────────────────────
   if(view==='pg_detail'&&activePGDetail){
     const pgTs=pgData[activePGDetail]||[];
@@ -601,35 +428,6 @@ export default function App() {
                         <button className="bp" onClick={e=>doWhatsApp(t.contact,t.name,e)} style={{background:'#25d36618',border:'1px solid #25d36633',color:'#25d366',padding:'4px 12px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Outfit,sans-serif'}}>💬 WhatsApp</button>
                       </div>
                     )}
-=======
-          {/* Tenant List */}
-          {filtered.map(t => {
-            const isActive = !t.dateLeaving || new Date(t.dateLeaving) >= new Date();
-            const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
-            const rent = parseFloat(t.rent) || 0;
-            const hasDeposit = t.deposit && t.deposit !== '' && t.deposit !== '0';
-            const rs = paid === 0 ? 'unpaid' : paid < rent ? 'half' : 'full';
-            const rc = { unpaid: '#ef4444', half: '#f59e0b', full: '#22c55e' }[rs];
-            const rl = { unpaid: 'Not Paid', half: `Half ₹${fmtNum(paid)}`, full: `✅ ₹${fmtNum(paid)}` }[rs];
-            return (
-              <div key={t.name + t.dateJoining} onClick={() => isAdmin && setEditingTenant(t)} style={{ background: '#111827', borderRadius: 14, padding: '13px 14px', border: `1px solid ${rs !== 'full' && isActive ? rc + '55' : '#1e293b'}`, cursor: isAdmin ? 'pointer' : 'default', marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, fontSize: 15, color: isActive ? '#f1f5f9' : '#64748b' }}>{t.name}</span>
-                      {!isActive && <Pill>Left</Pill>}
-                      {!hasDeposit && isActive && <Pill c="#f59e0b" bg="#f59e0b22">No Dep</Pill>}
-                      {rs === 'half' && isActive && <Pill c="#f59e0b" bg="#f59e0b22">Half</Pill>}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
-                      📅 {fmtDate(t.dateJoining)} {t.contact && `• 📞 ${t.contact}`}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Rent <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.rent)}</b></span>
-                      {hasDeposit && <span style={{ fontSize: 11, color: '#94a3b8' }}>Dep <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.deposit)}</b></span>}
-                    </div>
-                    {t.note && <div style={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', marginTop: 3 }}>💬 {t.note}</div>}
->>>>>>> e58d82b6de0d615a3ac9ffc1f352a3550ba38bf1
                   </div>
                   <div style={{textAlign:'right',marginLeft:12}}>
                     <div style={{fontWeight:700,fontSize:12,color:status.color,background:status.bg,padding:'4px 10px',borderRadius:20}}>{status.label}</div>
@@ -643,7 +441,7 @@ export default function App() {
       </div>
       <EditModal/><Toast toast={toast}/>
     </>);
-  }
+
 
   // ── Main Layout ─────────────────────────────────────────────
   return(<>
@@ -724,7 +522,6 @@ export default function App() {
                 <div style={{fontSize:20,fontWeight:800,fontFamily:'JetBrains Mono,monospace',color:'#f1f5f9'}}>₹{col.toLocaleString()}</div>
                 <div style={{fontSize:10,color:'#475569',marginTop:3}}>{act} tenants</div>
               </div>
-<<<<<<< HEAD
             ))}
           </div>
           <div className="fu" style={{background:'linear-gradient(135deg,#0d1626,#0a0f1e)',borderRadius:16,padding:'16px',border:'1px solid #1e2d45'}}>
@@ -738,25 +535,6 @@ export default function App() {
                   <div style={{width:'100%',height:h,background:m===selectedMonth?`linear-gradient(180deg,${pgColor},${pgColor}88)`:'#1e2d45',borderRadius:'4px 4px 2px 2px',transition:'height .4s ease,background .2s'}}/>
                   <div style={{fontSize:8,color:m===selectedMonth?pgColor:'#334155',fontWeight:600}}>{m.slice(0,1)}</div>
                 </div>);
-=======
-              {active.map(t => {
-                const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
-                const rent = parseFloat(t.rent) || 0;
-                const sc = paid === 0 ? '#ef4444' : paid < rent ? '#f59e0b' : '#22c55e';
-                const sl = paid === 0 ? 'Not Paid' : paid < rent ? `₹${fmtNum(paid)} (Half)` : `✅ ₹${fmtNum(paid)}`;
-                return (
-                  <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', borderBottom: '1px solid #0a0f1e', cursor: isAdmin ? 'pointer' : 'default' }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
-                      <div style={{ fontSize: 11, color: '#64748b' }}>₹{fmtNum(t.rent)}/mo{t.monthly?.[selectedMonth]?.collector ? ` • ${t.monthly[selectedMonth].collector}` : ''}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: sc, fontWeight: 700, fontSize: 13 }}>{sl}</div>
-                      {paid > 0 && paid < rent && <div style={{ fontSize: 10, color: '#ef4444' }}>₹{fmtNum(rent - paid)} due</div>}
-                    </div>
-                  </div>
-                );
->>>>>>> e58d82b6de0d615a3ac9ffc1f352a3550ba38bf1
               })}
             </div>
           </div>
@@ -903,28 +681,9 @@ export default function App() {
           </div>
         </>)}
       </main>
-<<<<<<< HEAD
       <EditModal/>
       <Toast toast={toast}/>
-=======
-
-      {/* Edit Modal */}
-      {editingTenant && <TenantModal tenant={editingTenant} selectedPG={selectedPG} pgColor={pgColor} isAdmin={isAdmin} onClose={() => setEditingTenant(null)} onSave={saveEdit} />}
-
-      <Toast toast={toast} />
-
-      {/* BOTTOM NAV */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0f1629', borderTop: '1px solid #1e293b', display: 'flex', zIndex: 50, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        {[['dashboard', '📊', 'Overview'], ['tenants', '👥', 'Tenants'], ['monthly', '📅', 'Monthly'], ['collectors', '💼', 'Collect']].map(([v, ic, lbl]) => (
-          <button key={v} onClick={() => setView(v)} style={{ flex: 1, padding: '10px 4px 8px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-            <span style={{ fontSize: 20 }}>{ic}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: view === v ? pgColor : '#475569' }}>{lbl}</span>
-            {view === v && <div style={{ width: 20, height: 2, background: pgColor, borderRadius: 2 }} />}
-          </button>
-        ))}
-      </div>
->>>>>>> e58d82b6de0d615a3ac9ffc1f352a3550ba38bf1
     </div>
   </>);
 }
-const Sbtn={background:'#111827',border:'1px solid #1e2d45',color:'#64748b',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontFamily:'Outfit,sans-serif',transition:'all .2s'};
+const Sbtn={background:'#111827',border:'1px solid #1e2d45',color:'#64748b',padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:12,fontFamily:'Outfit,sans-serif',transition:'all .2s'}};
