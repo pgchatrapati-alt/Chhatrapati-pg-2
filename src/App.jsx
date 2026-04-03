@@ -50,31 +50,26 @@ function Toast({ toast }) {
 }
 function MonthBar({ sel, setSel, clr }) {
   const ref = useRef(null);
-  useEffect(() => { const el = ref.current; if (!el) return; const b = el.querySelector(`[data-m="${sel}"]`); if (b) b.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); }, [sel]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const b = el.querySelector(`[data-m="${sel}"]`);
+    if (b) b.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }, [sel]);
   return (
     <div ref={ref} style={{ display: 'flex', gap: 5, overflowX: 'auto', padding: '8px 14px', background: '#0a0f1e', borderBottom: '1px solid #1e293b', scrollbarWidth: 'none' }}>
-      {MONTHS.map(m => <button key={m} data-m={m} onClick={() => setSel(m)} style={{ padding: '4px 11px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', background: sel === m ? clr : '#111827', color: sel === m ? '#fff' : '#64748b', boxShadow: sel === m ? `0 0 8px ${clr}66` : 'none', transition: 'all .15s' }}>{m.slice(0, 3)}</button>)}
+      {MONTHS.map(m => (
+        <button key={m} data-m={m} onClick={() => setSel(m)}
+          style={{ padding: '4px 11px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', background: sel === m ? clr : '#111827', color: sel === m ? '#fff' : '#64748b', boxShadow: sel === m ? `0 0 8px ${clr}66` : 'none', transition: 'all .15s' }}>
+          {m.slice(0, 3)}
+        </button>
+      ))}
     </div>
   );
 }
 
-// ── Call / WhatsApp bar (always visible) ──────────────────────
-function CallWABar() {
-  return (
-    <div style={{ display: 'flex', gap: 8, padding: '8px 14px', background: '#0a0f1e', borderBottom: '1px solid #1e293b' }}>
-      <a href="tel:9405334300" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#22c55e18', border: '1px solid #22c55e44', color: '#22c55e', padding: '8px', borderRadius: 10, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>
-        📞 <span>9405334300</span>
-      </a>
-      <a href="tel:8857009635" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#22c55e18', border: '1px solid #22c55e44', color: '#22c55e', padding: '8px', borderRadius: 10, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>
-        📞 <span>8857009635</span>
-      </a>
-      <a href="https://wa.me/919405334300?text=Hi%20PG!%20Enquiry%20karna%20tha." target="_blank" rel="noreferrer"
-        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#25d36618', border: '1px solid #25d36644', color: '#25d366', padding: '8px', borderRadius: 10, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>
-        💬 <span>WhatsApp</span>
-      </a>
-    </div>
-  );
-}
+// ── FIX 1+2: Call/WA bar — shown on pending list & tenant rows (NOT in header as 3rd image) ──
+// Removed from header completely; shown inline where needed
 
 // ── Login ─────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
@@ -109,12 +104,13 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// ── Tenant Modal (FIX: default tab = payments, call/wa always visible) ────
-function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) {
+// ── FIX 4+6: Tenant Modal — overview click = only payments, tenant tab click = only info ──
+// modalMode: 'payments' | 'info'
+function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave, modalMode = 'payments' }) {
   const [form, setForm] = useState({ ...tenant });
   const [monthly, setMonthly] = useState(JSON.parse(JSON.stringify(tenant.monthly || emptyMonthly())));
-  // FIX 8: default tab = 'monthly' (payments), info is second
-  const [tab, setTab] = useState('monthly');
+  // FIX 4: default tab depends on where user clicked
+  const [tab, setTab] = useState(modalMode);
   const setM = (m, f, v) => setMonthly(p => ({ ...p, [m]: { ...p[m], [f]: v } }));
   const totalPaid = MONTHS.reduce((s, m) => s + (parseFloat(monthly[m]?.amount) || 0), 0);
   const isActive = !tenant.dateLeaving || new Date(tenant.dateLeaving) >= new Date();
@@ -122,8 +118,7 @@ function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) 
   return (
     <div style={S.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={S.modal}>
-        {/* Drag handle */}
-        <div style={{ width: 36, height: 4, background: '#334155', borderRadius: 4, margin: '0 auto 16px' }} />
+        <div style={{ width: 36, height: 4, background: '#334155', borderRadius: 4, margin: '0 auto 14px' }} />
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
@@ -133,21 +128,20 @@ function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) 
             {tenant.contact && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>📞 {tenant.contact}</div>}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {!isAdmin && <Pill c="#3b82f6" bg="#3b82f622">👁 View</Pill>}
             <button onClick={onClose} style={{ ...S.ghostBtn, fontSize: 15, padding: '4px 10px' }}>✕</button>
           </div>
         </div>
 
-        {/* FIX 6+7: Call & WhatsApp ALWAYS visible in modal */}
+        {/* FIX 1: Call & WA always visible in modal (as per image 1) */}
         {tenant.contact && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <a href={`tel:${tenant.contact.replace(/\s/g, '')}`}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#22c55e', color: '#fff', padding: '9px', borderRadius: 10, textDecoration: 'none', fontSize: 13, fontWeight: 700 }}>
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: '#22c55e', color: '#fff', padding: '11px', borderRadius: 10, textDecoration: 'none', fontSize: 14, fontWeight: 800 }}>
               📞 Call
             </a>
-            <a href={`https://wa.me/91${tenant.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(tenant.name)}!%20PG%20rent%20reminder%20-%20please%20clear%20this%20month's%20dues.%20Thank%20you!`}
+            <a href={`https://wa.me/91${tenant.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(tenant.name)}!%20PG%20rent%20reminder%20-%20please%20clear%20dues.%20Thank%20you!`}
               target="_blank" rel="noreferrer"
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#25d366', color: '#fff', padding: '9px', borderRadius: 10, textDecoration: 'none', fontSize: 13, fontWeight: 700 }}>
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: '#25d366', color: '#fff', padding: '11px', borderRadius: 10, textDecoration: 'none', fontSize: 14, fontWeight: 800 }}>
               💬 WhatsApp
             </a>
           </div>
@@ -167,32 +161,35 @@ function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) 
           ))}
         </div>
 
-        {/* FIX 8: Tabs — Payments first, Info second */}
+        {/* FIX 4: Tabs — Payments | Info */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: '#0a0f1e', borderRadius: 10, padding: 4 }}>
           {[['monthly', '📅 Payments'], ['info', '📋 Info']].map(([t, lbl]) => (
-            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: tab === t ? pgColor : 'transparent', color: tab === t ? '#fff' : '#64748b', transition: 'all .15s' }}>{lbl}</button>
+            <button key={t} onClick={() => setTab(t)}
+              style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: tab === t ? pgColor : 'transparent', color: tab === t ? '#fff' : '#64748b', transition: 'all .15s' }}>
+              {lbl}
+            </button>
           ))}
         </div>
 
-        {/* Info Tab */}
+        {/* Info Tab — FIX 6: viewer can also edit */}
         {tab === 'info' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Input label="Contact" value={form.contact || ''} onChange={v => setForm(p => ({ ...p, contact: v }))} disabled={!isAdmin} />
-              <Input label="Deposit ₹" value={form.deposit || ''} onChange={v => setForm(p => ({ ...p, deposit: v }))} disabled={!isAdmin} />
+              <Input label="Contact" value={form.contact || ''} onChange={v => setForm(p => ({ ...p, contact: v }))} />
+              <Input label="Deposit ₹" value={form.deposit || ''} onChange={v => setForm(p => ({ ...p, deposit: v }))} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Input label="Rent ₹/mo" value={form.rent || ''} onChange={v => setForm(p => ({ ...p, rent: v }))} disabled={!isAdmin} />
-              <Input label="Note" value={form.note || ''} onChange={v => setForm(p => ({ ...p, note: v }))} disabled={!isAdmin} />
+              <Input label="Rent ₹/mo" value={form.rent || ''} onChange={v => setForm(p => ({ ...p, rent: v }))} />
+              <Input label="Note" value={form.note || ''} onChange={v => setForm(p => ({ ...p, note: v }))} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Input label="Date Joining" type="date" value={form.dateJoining || ''} onChange={v => setForm(p => ({ ...p, dateJoining: v }))} disabled={!isAdmin} />
-              <Input label="Date Leaving" type="date" value={form.dateLeaving || ''} onChange={v => setForm(p => ({ ...p, dateLeaving: v }))} disabled={!isAdmin} />
+              <Input label="Date Joining" type="date" value={form.dateJoining || ''} onChange={v => setForm(p => ({ ...p, dateJoining: v }))} />
+              <Input label="Date Leaving" type="date" value={form.dateLeaving || ''} onChange={v => setForm(p => ({ ...p, dateLeaving: v }))} />
             </div>
           </div>
         )}
 
-        {/* Payments Tab */}
+        {/* Payments Tab — FIX 6: viewer can also edit payments */}
         {tab === 'monthly' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {MONTHS.map(m => {
@@ -203,33 +200,31 @@ function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) 
               const borderClr = paid === 0 ? '#1e293b' : paid < rent ? '#f59e0b44' : `${pgColor}44`;
               return (
                 <div key={m} style={{ background: '#0a0f1e', borderRadius: 10, padding: '10px 12px', border: `1px solid ${borderClr}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: isAdmin && paid >= 0 ? 8 : 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                     <span style={{ fontWeight: 700, fontSize: 13, color: tc }}>{m}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: tc }}>
                       {paid > 0 ? `₹${fmtNum(paid)}${paid < rent ? ' (Half)' : ' ✓'}` : 'Not Paid'}
                     </span>
                   </div>
-                  {isAdmin && (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <Input label="₹ Amount" value={md.amount} onChange={v => setM(m, 'amount', v)} />
-                      <Sel label="Half/Full" value={md.halfFull} onChange={v => setM(m, 'halfFull', v)} options={['Full', 'Half']} />
-                      <Sel label="Collector" value={md.collector} onChange={v => setM(m, 'collector', v)} options={COLLECTORS} />
-                      <Input label="Note" value={md.note} onChange={v => setM(m, 'note', v)} />
-                    </div>
-                  )}
-                  {!isAdmin && paid > 0 && <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{[md.collector, md.note].filter(Boolean).join(' • ')}</div>}
+                  {/* FIX 6: Always editable — both admin and viewer */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <Input label="₹ Amount" value={md.amount} onChange={v => setM(m, 'amount', v)} />
+                    <Sel label="Half/Full" value={md.halfFull} onChange={v => setM(m, 'halfFull', v)} options={['Full', 'Half']} />
+                    <Sel label="Collector" value={md.collector} onChange={v => setM(m, 'collector', v)} options={COLLECTORS} />
+                    <Input label="Note" value={md.note} onChange={v => setM(m, 'note', v)} />
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* Footer */}
+        {/* Footer — FIX 6: always save */}
         <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '1px solid #1e293b' }}>
-          {isAdmin
-            ? <button onClick={() => onSave({ ...form, monthly })} style={{ flex: 1, background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>💾 Save + Auto Sync</button>
-            : <div style={{ flex: 1, textAlign: 'center', fontSize: 13, color: '#64748b', padding: 12 }}>👁 Viewer mode</div>
-          }
+          <button onClick={() => onSave({ ...form, monthly })}
+            style={{ flex: 1, background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>
+            💾 Save + Auto Sync
+          </button>
           <button onClick={onClose} style={S.ghostBtn}>Close</button>
         </div>
       </div>
@@ -237,30 +232,40 @@ function TenantModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) 
   );
 }
 
-// ── Collector Summary Card ─────────────────────────────────────
-function CollectorCard({ name, months, selectedMonth }) {
+// ── FIX 3: Collector card with per-PG breakdown ──────────────
+function CollectorCard({ name, months, selectedMonth, pgData }) {
   const c = COLLECTOR_COLORS[name] || '#94a3b8';
   const mAmt = months[selectedMonth] || 0;
   const yTotal = Object.values(months).reduce((s, v) => s + v, 0);
-  // Month breakdown for this collector
-  const nonZero = MONTHS.filter(m => months[m] > 0);
+
+  // FIX 3: Per-PG breakdown for this collector this month
+  const pgBreakdown = Object.entries(pgData).map(([pgName, tenants]) => {
+    const amt = tenants.reduce((s, t) => {
+      const md = t.monthly?.[selectedMonth];
+      if (md?.collector === name && md?.amount) return s + (parseFloat(md.amount) || 0);
+      return s;
+    }, 0);
+    return { pgName, amt };
+  }).filter(x => x.amt > 0).sort((a, b) => b.amt - a.amt);
+
   return (
     <div style={{ background: `linear-gradient(135deg,${c}14,#111827)`, borderRadius: 16, padding: '14px', border: `1px solid ${c}44`, marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: c }}>{name}</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: c }}>{name}</div>
           <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>This month ({selectedMonth})</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9' }}>₹{fmtNum(mAmt)}</div>
-          <div style={{ fontSize: 10, color: c, fontWeight: 600 }}>Year: ₹{fmtNum(yTotal)}</div>
+          <div style={{ fontSize: 24, fontWeight: 900, color: '#f1f5f9' }}>₹{fmtNum(mAmt)}</div>
+          <div style={{ fontSize: 10, color: c, fontWeight: 600 }}>Year total: ₹{fmtNum(yTotal)}</div>
         </div>
       </div>
-      {/* Mini month bars */}
-      <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 32, marginBottom: 8 }}>
+
+      {/* Mini bar chart */}
+      <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 36, marginBottom: 8 }}>
         {MONTHS.map(m => {
           const max = Math.max(...Object.values(months), 1);
-          const h = Math.max(2, (months[m] / max) * 28);
+          const h = Math.max(2, (months[m] / max) * 32);
           return (
             <div key={m} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
               <div style={{ width: '100%', height: h, background: m === selectedMonth ? c : months[m] > 0 ? c + '55' : '#1e293b', borderRadius: 2, transition: 'height .3s' }} />
@@ -269,16 +274,30 @@ function CollectorCard({ name, months, selectedMonth }) {
           );
         })}
       </div>
-      {/* Recent months */}
-      {nonZero.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {nonZero.slice(-6).map(m => (
-            <div key={m} style={{ background: '#0a0f1e', borderRadius: 6, padding: '3px 8px', fontSize: 10, color: '#94a3b8' }}>
-              {m.slice(0, 3)}: <span style={{ color: c, fontWeight: 700 }}>₹{(months[m] / 1000).toFixed(1)}k</span>
-            </div>
-          ))}
+
+      {/* FIX 3: Per-PG breakdown */}
+      {pgBreakdown.length > 0 && (
+        <div style={{ borderTop: `1px solid ${c}22`, paddingTop: 8, marginTop: 4 }}>
+          <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>PG-wise — {selectedMonth}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {pgBreakdown.map(({ pgName, amt }) => (
+              <div key={pgName} style={{ background: '#0a0f1e', borderRadius: 8, padding: '4px 10px', fontSize: 11, border: `1px solid ${c}33` }}>
+                <span style={{ color: '#94a3b8' }}>{pgName}: </span>
+                <span style={{ color: c, fontWeight: 700 }}>₹{fmtNum(amt)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* Recent months */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+        {MONTHS.filter(m => months[m] > 0).slice(-5).map(m => (
+          <div key={m} style={{ background: '#0a0f1e', borderRadius: 6, padding: '3px 8px', fontSize: 10, color: '#94a3b8' }}>
+            {m.slice(0, 3)}: <span style={{ color: c, fontWeight: 700 }}>₹{fmtNum(months[m])}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -298,11 +317,19 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showAddTenant, setShowAddTenant] = useState(false);
   const [editingTenant, setEditingTenant] = useState(null);
+  const [modalMode, setModalMode] = useState('payments'); // 'payments' | 'info'
   const [urlDraft, setUrlDraft] = useState(webAppUrl);
   const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
   const [pendingTab, setPendingTab] = useState('rent');
 
   const isAdmin = userRole === 'admin';
+
+  // FIX 4: Open modal with specific tab
+  function openModal(tenant, mode) {
+    setEditingTenant(tenant);
+    setModalMode(mode);
+  }
+
   const showToast = useCallback((msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
   const markSync = () => setLastSync(new Date().toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }));
 
@@ -336,8 +363,21 @@ export default function App() {
 
   const tenants = pgData[selectedPG] || [];
   const allTenants = Object.values(pgData).flat();
+
+  // FIX 5: Sort tenants — active new first, left tenants at bottom
+  const sortedTenants = [...tenants].sort((a, b) => {
+    const aLeft = a.dateLeaving && new Date(a.dateLeaving) < new Date();
+    const bLeft = b.dateLeaving && new Date(b.dateLeaving) < new Date();
+    if (aLeft && !bLeft) return 1;
+    if (!aLeft && bLeft) return -1;
+    // Newer joining date = higher up
+    return new Date(b.dateJoining || 0) - new Date(a.dateJoining || 0);
+  });
+  const filteredTenants = sortedTenants.filter(t =>
+    t.name.toLowerCase().includes(search.toLowerCase()) || (t.contact || '').includes(search)
+  );
+
   const active = tenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
-  const filtered = tenants.filter(t => t.name.toLowerCase().includes(search.toLowerCase()) || (t.contact || '').includes(search));
   const totalRent = active.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
   const collected = tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
   const grandTotal = allTenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
@@ -345,7 +385,7 @@ export default function App() {
   const depositPending = active.filter(t => !t.deposit || t.deposit === '' || t.deposit === '0');
   const halfPaid = active.filter(t => { const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0; const r = parseFloat(t.rent) || 0; return p > 0 && p < r; });
 
-  // FIX 10: Collector totals — per month breakdown
+  // Collector totals
   const collectorTotals = (() => {
     const totals = {};
     COLLECTORS.forEach(c => { totals[c] = {}; MONTHS.forEach(m => { totals[c][m] = 0; }); });
@@ -371,14 +411,17 @@ export default function App() {
     setPgData(newData); setEditingTenant(null);
     await doPush(newData);
   }
+
+  // FIX 5+6: Add tenant — new tenant goes to top (we prepend)
   async function addTenant() {
     if (!newTenant.name.trim()) return showToast('Naam zaroor daalo', 'error');
     const tenant = { ...newTenant, monthly: emptyMonthly() };
-    const newData = { ...pgData, [selectedPG]: [...(pgData[selectedPG] || []), tenant] };
+    // Prepend so new tenants appear at top
+    const newData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
     setPgData(newData);
     setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
     setShowAddTenant(false);
-    showToast('✅ Tenant added!', 'info');
+    showToast('✅ Tenant added!', 'success');
     await doPush(newData);
   }
 
@@ -386,7 +429,7 @@ export default function App() {
 
   return (
     <div style={S.root}>
-      {/* HEADER */}
+      {/* HEADER — FIX 2: NO call/wa numbers in header */}
       <header style={S.header}>
         <span style={S.logo}>🏠 PG</span>
         {!isAdmin && <Pill c="#3b82f6" bg="#3b82f622">👁 View</Pill>}
@@ -400,9 +443,6 @@ export default function App() {
         </>}
         <button onClick={() => setUserRole(null)} style={{ ...S.hBtn, color: '#ef4444', borderColor: '#ef444433' }}>⏻</button>
       </header>
-
-      {/* FIX 6+7: Call & WhatsApp ALWAYS visible below header */}
-      <CallWABar />
 
       {/* SETTINGS */}
       {showSettings && isAdmin && (
@@ -420,8 +460,7 @@ export default function App() {
             1. Google Sheet → <b style={{ color: '#f1f5f9' }}>Extensions → Apps Script</b><br />
             2. <b style={{ color: '#f1f5f9' }}>GoogleAppsScript_PG_Sync_v2.js</b> paste karo<br />
             3. <b style={{ color: '#f1f5f9' }}>Deploy → New Deployment → Web App</b><br />
-            &nbsp;&nbsp;Execute as: <b style={{ color: '#22c55e' }}>Me</b> | Access: <b style={{ color: '#22c55e' }}>Anyone</b><br />
-            4. URL yahan paste karo → Save
+            &nbsp;&nbsp;Execute as: <b style={{ color: '#22c55e' }}>Me</b> | Access: <b style={{ color: '#22c55e' }}>Anyone</b>
           </div>
         </div>
       )}
@@ -431,7 +470,8 @@ export default function App() {
         {Object.keys(pgData).map(pg => {
           const pgC = (pgData[pg] || []).reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
           return (
-            <button key={pg} onClick={() => setSelectedPG(pg)} style={{ padding: '6px 14px', borderRadius: 20, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', fontSize: 13, fontWeight: 700, background: selectedPG === pg ? PG_COLORS[pg] || '#6366f1' : '#111827', color: selectedPG === pg ? '#fff' : '#64748b', boxShadow: selectedPG === pg ? `0 0 10px ${PG_COLORS[pg]}55` : 'none', transition: 'all .15s' }}>
+            <button key={pg} onClick={() => setSelectedPG(pg)}
+              style={{ padding: '6px 14px', borderRadius: 20, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', fontSize: 13, fontWeight: 700, background: selectedPG === pg ? PG_COLORS[pg] || '#6366f1' : '#111827', color: selectedPG === pg ? '#fff' : '#64748b', boxShadow: selectedPG === pg ? `0 0 10px ${PG_COLORS[pg]}55` : 'none', transition: 'all .15s' }}>
               {pg}{pgC > 0 && <span style={{ fontSize: 9, marginLeft: 5, opacity: 0.8 }}>₹{(pgC / 1000).toFixed(0)}k</span>}
             </button>
           );
@@ -439,15 +479,16 @@ export default function App() {
       </div>
 
       {/* VIEW TABS */}
-      <div style={{ display: 'flex', background: '#0a0f1e', borderBottom: '1px solid #1e293b', scrollbarWidth: 'none', overflowX: 'auto' }}>
+      <div style={{ display: 'flex', background: '#0a0f1e', borderBottom: '1px solid #1e293b', overflowX: 'auto', scrollbarWidth: 'none' }}>
         {[['dashboard', '📊', 'Overview'], ['tenants', '👥', 'Tenants'], ['monthly', '📅', 'Monthly'], ['collectors', '💼', 'Collectors']].map(([v, ic, lbl]) => (
-          <button key={v} onClick={() => setView(v)} style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: view === v ? pgColor : '#475569', borderBottom: `2px solid ${view === v ? pgColor : 'transparent'}`, whiteSpace: 'nowrap', transition: 'color .15s' }}>
+          <button key={v} onClick={() => setView(v)}
+            style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: view === v ? pgColor : '#475569', borderBottom: `2px solid ${view === v ? pgColor : 'transparent'}`, whiteSpace: 'nowrap', transition: 'color .15s' }}>
             {ic} {lbl}
           </button>
         ))}
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* MAIN */}
       <main style={{ padding: '14px 14px 88px', maxWidth: 700, margin: '0 auto' }}>
 
         {/* ══ DASHBOARD ══ */}
@@ -477,7 +518,7 @@ export default function App() {
               { ic: '👥', lbl: 'Active', val: active.length, c: pgColor },
               { ic: '📋', lbl: 'Expected', val: `₹${fmtNum(totalRent)}`, c: pgColor },
               { ic: '⏳', lbl: 'Rent Pending', val: rentPending.length, warn: rentPending.length > 0, sub: rentPending.length > 0 ? `${halfPaid.length} half paid` : '✅ All paid', click: 'rent' },
-              { ic: '🔒', lbl: 'No Deposit', val: depositPending.length, warn: depositPending.length > 0, sub: depositPending.length > 0 ? depositPending.slice(0, 1).map(t => t.name).join('') : '✅ All ok', click: 'deposit' },
+              { ic: '🔒', lbl: 'No Deposit', val: depositPending.length, warn: depositPending.length > 0, sub: depositPending.length > 0 ? depositPending[0]?.name : '✅ All ok', click: 'deposit' },
             ].map((s, i) => (
               <div key={i} onClick={() => s.click && setPendingTab(s.click)}
                 style={{ background: '#111827', borderRadius: 14, padding: '14px 12px', border: `1px solid ${s.warn ? '#ef444466' : '#1e293b'}`, boxShadow: s.warn ? '0 0 12px #ef444422' : 'none', cursor: s.click ? 'pointer' : 'default' }}>
@@ -502,13 +543,17 @@ export default function App() {
             </div>
           </div>
 
-          {/* Pending section */}
+          {/* Pending */}
           <div style={{ background: '#111827', borderRadius: 14, padding: 14, border: '1px solid #1e293b' }}>
             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
               {[['rent', '⏳ Rent'], ['deposit', '🔒 Deposit']].map(([t, lbl]) => (
-                <button key={t} onClick={() => setPendingTab(t)} style={{ flex: 1, padding: '7px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: pendingTab === t ? pgColor : '#0a0f1e', color: pendingTab === t ? '#fff' : '#64748b', transition: 'all .15s' }}>{lbl} Pending</button>
+                <button key={t} onClick={() => setPendingTab(t)}
+                  style={{ flex: 1, padding: '7px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: pendingTab === t ? pgColor : '#0a0f1e', color: pendingTab === t ? '#fff' : '#64748b', transition: 'all .15s' }}>
+                  {lbl} Pending
+                </button>
               ))}
             </div>
+
             {pendingTab === 'rent' && (<>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: '#64748b' }}>{selectedMonth} — {rentPending.length} pending</span>
@@ -520,10 +565,26 @@ export default function App() {
                   const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
                   const rent = parseFloat(t.rent) || 0;
                   return (
-                    <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
+                    <div key={t.name}
+                      onClick={() => openModal(t, 'payments')} // FIX 4: dashboard click = payments tab
+                      style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: 'pointer' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
                         <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • ₹{fmtNum(t.rent)}/mo</div>
+                        {/* FIX 1: Call/WA on pending list too — as per image 2 */}
+                        {t.contact && (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 5 }} onClick={e => e.stopPropagation()}>
+                            <a href={`tel:${t.contact.replace(/\s/g, '')}`}
+                              style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#22c55e18', border: '1px solid #22c55e33', color: '#22c55e', padding: '3px 9px', borderRadius: 16, textDecoration: 'none', fontSize: 11, fontWeight: 700 }}>
+                              📞 Call
+                            </a>
+                            <a href={`https://wa.me/91${t.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(t.name)}!%20${encodeURIComponent(selectedMonth)}%20ka%20rent%20pending%20hai.%20Please%20jama%20karein.`}
+                              target="_blank" rel="noreferrer"
+                              style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#25d36618', border: '1px solid #25d36633', color: '#25d366', padding: '3px 9px', borderRadius: 16, textDecoration: 'none', fontSize: 11, fontWeight: 700 }}>
+                              💬 WA
+                            </a>
+                          </div>
+                        )}
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ color: paid > 0 ? '#f59e0b' : '#ef4444', fontWeight: 700, fontSize: 12 }}>{paid > 0 ? `Half (₹${fmtNum(paid)})` : 'Not Paid'}</div>
@@ -534,12 +595,15 @@ export default function App() {
                 })
               }
             </>)}
+
             {pendingTab === 'deposit' && (<>
               <div style={{ marginBottom: 8 }}><span style={{ fontSize: 11, color: '#64748b' }}>{depositPending.length} tenants bina deposit ke</span></div>
               {depositPending.length === 0
                 ? <div style={{ color: '#22c55e', fontSize: 13, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
                 : depositPending.map(t => (
-                  <div key={t.name} onClick={() => isAdmin && setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
+                  <div key={t.name}
+                    onClick={() => openModal(t, 'info')} // FIX 4: deposit click = info tab
+                    style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: 'pointer' }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
                       <div style={{ fontSize: 11, color: '#64748b' }}>{fmtDate(t.dateJoining)} • Rent ₹{fmtNum(t.rent)}</div>
@@ -557,13 +621,17 @@ export default function App() {
           <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
           <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search…" style={{ ...S.input, flex: 1, padding: '9px 12px' }} />
-            {isAdmin && <button onClick={() => setShowAddTenant(true)} style={{ background: pgColor, border: 'none', color: '#fff', padding: '9px 16px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>+ Add</button>}
+            {/* FIX 6: Viewer can also add tenant */}
+            <button onClick={() => setShowAddTenant(true)}
+              style={{ background: pgColor, border: 'none', color: '#fff', padding: '9px 16px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+              + Add
+            </button>
           </div>
 
           <div style={{ display: 'flex', gap: 6, marginBottom: 12, overflowX: 'auto', scrollbarWidth: 'none' }}>
             {[
               { lbl: 'Active', val: active.length, c: '#22c55e' },
-              { lbl: `Paid`, val: active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) >= (parseFloat(t.rent) || 1)).length, c: '#22c55e' },
+              { lbl: 'Paid', val: active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) >= (parseFloat(t.rent) || 1)).length, c: '#22c55e' },
               { lbl: 'Half', val: halfPaid.length, c: '#f59e0b' },
               { lbl: 'Unpaid', val: active.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)).length, c: '#ef4444' },
               { lbl: 'No Dep', val: depositPending.length, c: '#f59e0b' },
@@ -575,7 +643,8 @@ export default function App() {
             ))}
           </div>
 
-          {showAddTenant && isAdmin && (
+          {/* Add Tenant Form */}
+          {showAddTenant && (
             <div style={{ background: '#111827', borderRadius: 14, padding: 14, marginBottom: 14, border: `1px solid ${pgColor}66` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <span style={{ fontWeight: 700, fontSize: 13, color: '#94a3b8' }}>NEW TENANT — {selectedPG}</span>
@@ -595,15 +664,17 @@ export default function App() {
                   <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
                 </div>
                 <Input label="Note" value={newTenant.note} onChange={v => setNewTenant(p => ({ ...p, note: v }))} />
-                <button onClick={addTenant} style={{ background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>
+                <button onClick={addTenant}
+                  style={{ background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>
                   ✅ Add Tenant + Auto Sync
                 </button>
               </div>
             </div>
           )}
 
-          {filtered.map(t => {
-            const isActive2 = !t.dateLeaving || new Date(t.dateLeaving) >= new Date();
+          {/* FIX 5: Tenant list — active newest first, left tenants greyed at bottom */}
+          {filteredTenants.map(t => {
+            const isLeft = t.dateLeaving && new Date(t.dateLeaving) < new Date();
             const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
             const rent = parseFloat(t.rent) || 0;
             const hasDeposit = t.deposit && t.deposit !== '' && t.deposit !== '0';
@@ -611,14 +682,17 @@ export default function App() {
             const rc = { unpaid: '#ef4444', half: '#f59e0b', full: '#22c55e' }[rs];
             const rl = { unpaid: 'Not Paid', half: `Half ₹${fmtNum(paid)}`, full: `✅ ₹${fmtNum(paid)}` }[rs];
             return (
-              <div key={t.name + t.dateJoining} onClick={() => setEditingTenant(t)} style={{ background: '#111827', borderRadius: 14, padding: '13px 14px', border: `1px solid ${rs !== 'full' && isActive2 ? rc + '55' : '#1e293b'}`, cursor: 'pointer', marginBottom: 8, transition: 'border .15s' }}>
+              <div key={t.name + t.dateJoining}
+                // FIX 4: tenant tab click = info tab
+                onClick={() => openModal(t, 'info')}
+                style={{ background: '#111827', borderRadius: 14, padding: '13px 14px', border: `1px solid ${rs !== 'full' && !isLeft ? rc + '55' : '#1e293b'}`, cursor: 'pointer', marginBottom: 8, opacity: isLeft ? 0.5 : 1, transition: 'opacity .15s' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, fontSize: 15, color: isActive2 ? '#f1f5f9' : '#64748b' }}>{t.name}</span>
-                      {!isActive2 && <Pill>Left</Pill>}
-                      {!hasDeposit && isActive2 && <Pill c="#f59e0b" bg="#f59e0b22">No Dep</Pill>}
-                      {rs === 'half' && isActive2 && <Pill c="#f59e0b" bg="#f59e0b22">Half</Pill>}
+                      <span style={{ fontWeight: 700, fontSize: 15, color: isLeft ? '#64748b' : '#f1f5f9' }}>{t.name}</span>
+                      {isLeft && <Pill c="#64748b" bg="#33415522">Left</Pill>}
+                      {!hasDeposit && !isLeft && <Pill c="#f59e0b" bg="#f59e0b22">No Dep</Pill>}
+                      {rs === 'half' && !isLeft && <Pill c="#f59e0b" bg="#f59e0b22">Half</Pill>}
                     </div>
                     <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
                       📅 {fmtDate(t.dateJoining)} {t.contact && `• 📞 ${t.contact}`}
@@ -627,30 +701,31 @@ export default function App() {
                       <span style={{ fontSize: 11, color: '#94a3b8' }}>Rent <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.rent)}</b></span>
                       {hasDeposit && <span style={{ fontSize: 11, color: '#94a3b8' }}>Dep <b style={{ color: '#f1f5f9' }}>₹{fmtNum(t.deposit)}</b></span>}
                     </div>
-                    {/* FIX 6+7: Call/WA on tenant card always */}
-                    {t.contact && (
+                    {/* Call/WA on tenant cards */}
+                    {t.contact && !isLeft && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
                         <a href={`tel:${t.contact.replace(/\s/g, '')}`}
-                          style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#22c55e18', border: '1px solid #22c55e33', color: '#22c55e', padding: '4px 10px', borderRadius: 20, textDecoration: 'none', fontSize: 11, fontWeight: 700 }}>
+                          style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#22c55e18', border: '1px solid #22c55e33', color: '#22c55e', padding: '4px 10px', borderRadius: 20, textDecoration: 'none', fontSize: 11, fontWeight: 700 }}>
                           📞 Call
                         </a>
-                        <a href={`https://wa.me/91${t.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(t.name)}!%20PG%20rent%20reminder%20-%20please%20clear%20dues.%20Thank%20you!`}
+                        <a href={`https://wa.me/91${t.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(t.name)}!%20PG%20rent%20reminder%20-%20please%20clear%20dues.`}
                           target="_blank" rel="noreferrer"
-                          style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#25d36618', border: '1px solid #25d36633', color: '#25d366', padding: '4px 10px', borderRadius: 20, textDecoration: 'none', fontSize: 11, fontWeight: 700 }}>
+                          style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#25d36618', border: '1px solid #25d36633', color: '#25d366', padding: '4px 10px', borderRadius: 20, textDecoration: 'none', fontSize: 11, fontWeight: 700 }}>
                           💬 WA
                         </a>
                       </div>
                     )}
                   </div>
                   <div style={{ textAlign: 'right', marginLeft: 10, flexShrink: 0 }}>
-                    <div style={{ color: rc, fontWeight: 700, fontSize: 13 }}>{rl}</div>
-                    {t.monthly?.[selectedMonth]?.collector && <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{t.monthly[selectedMonth].collector}</div>}
+                    {!isLeft && <div style={{ color: rc, fontWeight: 700, fontSize: 13 }}>{rl}</div>}
+                    {t.monthly?.[selectedMonth]?.collector && !isLeft && <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{t.monthly[selectedMonth].collector}</div>}
+                    {isLeft && <div style={{ fontSize: 10, color: '#64748b' }}>Left {fmtDate(t.dateLeaving)}</div>}
                   </div>
                 </div>
               </div>
             );
           })}
-          {filtered.length === 0 && <div style={{ textAlign: 'center', color: '#475569', padding: 32 }}>No tenants found</div>}
+          {filteredTenants.length === 0 && <div style={{ textAlign: 'center', color: '#475569', padding: 32 }}>No tenants found</div>}
         </>)}
 
         {/* ══ MONTHLY ══ */}
@@ -680,7 +755,9 @@ export default function App() {
                 const sc = paid === 0 ? '#ef4444' : paid < rent ? '#f59e0b' : '#22c55e';
                 const sl = paid === 0 ? 'Not Paid' : paid < rent ? `₹${fmtNum(paid)} (Half)` : `✅ ₹${fmtNum(paid)}`;
                 return (
-                  <div key={t.name} onClick={() => setEditingTenant(t)} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', borderBottom: '1px solid #0a0f1e', cursor: 'pointer' }}>
+                  <div key={t.name}
+                    onClick={() => openModal(t, 'payments')} // monthly tab = payments
+                    style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', borderBottom: '1px solid #0a0f1e', cursor: 'pointer' }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
                       <div style={{ fontSize: 11, color: '#64748b' }}>₹{fmtNum(t.rent)}/mo{t.monthly?.[selectedMonth]?.collector ? ` • ${t.monthly[selectedMonth].collector}` : ''}</div>
@@ -696,7 +773,7 @@ export default function App() {
           </div>
         </>)}
 
-        {/* ══ FIX 10: COLLECTORS — premium cards with mini bar charts ══ */}
+        {/* ══ FIX 3: COLLECTORS — per-PG breakdown per month ══ */}
         {view === 'collectors' && (<>
           <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
           <div style={{ marginTop: 12 }}>
@@ -704,12 +781,11 @@ export default function App() {
               {selectedMonth} — Collection Summary
             </div>
 
-            {/* FIX 10: Vishnu & Mahendra this month + year total with mini bars */}
             {Object.entries(collectorTotals).map(([name, months]) => (
-              <CollectorCard key={name} name={name} months={months} selectedMonth={selectedMonth} />
+              <CollectorCard key={name} name={name} months={months} selectedMonth={selectedMonth} pgData={pgData} />
             ))}
 
-            {/* Full month table */}
+            {/* Full breakdown table */}
             <div style={{ background: '#111827', borderRadius: 14, overflow: 'hidden', border: '1px solid #1e293b', marginTop: 8 }}>
               <div style={{ padding: '12px 14px', borderBottom: '1px solid #1e293b', fontWeight: 700, fontSize: 13 }}>📅 Month-wise Breakdown</div>
               <div style={{ overflowX: 'auto' }}>
@@ -727,7 +803,8 @@ export default function App() {
                     {MONTHS.map(m => {
                       const rowTotal = Object.values(collectorTotals).reduce((s, months) => s + (months[m] || 0), 0);
                       return (
-                        <tr key={m} onClick={() => setSelectedMonth(m)} style={{ borderTop: '1px solid #0a0f1e', background: m === selectedMonth ? '#ffffff08' : 'transparent', cursor: 'pointer' }}>
+                        <tr key={m} onClick={() => setSelectedMonth(m)}
+                          style={{ borderTop: '1px solid #0a0f1e', background: m === selectedMonth ? '#ffffff08' : 'transparent', cursor: 'pointer' }}>
                           <td style={{ padding: '9px 12px', color: m === selectedMonth ? pgColor : '#94a3b8', fontWeight: m === selectedMonth ? 700 : 400 }}>{m.slice(0, 3)}</td>
                           {Object.entries(collectorTotals).map(([c, months]) => (
                             <td key={c} style={{ padding: '9px 10px', textAlign: 'right', color: months[m] ? '#f1f5f9' : '#334155' }}>
@@ -769,6 +846,7 @@ export default function App() {
           isAdmin={isAdmin}
           onClose={() => setEditingTenant(null)}
           onSave={saveEdit}
+          modalMode={modalMode}
         />
       )}
 
@@ -777,7 +855,8 @@ export default function App() {
       {/* BOTTOM NAV */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0f1629', borderTop: '1px solid #1e293b', display: 'flex', zIndex: 50, paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {[['dashboard', '📊', 'Overview'], ['tenants', '👥', 'Tenants'], ['monthly', '📅', 'Monthly'], ['collectors', '💼', 'Collect']].map(([v, ic, lbl]) => (
-          <button key={v} onClick={() => setView(v)} style={{ flex: 1, padding: '10px 4px 8px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+          <button key={v} onClick={() => setView(v)}
+            style={{ flex: 1, padding: '10px 4px 8px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
             <span style={{ fontSize: 20 }}>{ic}</span>
             <span style={{ fontSize: 9, fontWeight: 700, color: view === v ? pgColor : '#475569' }}>{lbl}</span>
             {view === v && <div style={{ width: 20, height: 2, background: pgColor, borderRadius: 2 }} />}
