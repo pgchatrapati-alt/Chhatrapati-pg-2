@@ -158,14 +158,12 @@ function TenantInfoModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave
             <Input label="Date Leaving" type="date" value={form.dateLeaving || ''} onChange={v => setForm(p => ({ ...p, dateLeaving: v }))} />
           </div>
         </div>
-        {isAdmin && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '1px solid #1e293b' }}>
-            <button onClick={() => onSave({ ...form, monthly: tenant.monthly || emptyMonthly() })}
-              style={{ flex: 1, background: '#f59e0b', border: 'none', color: '#1a1000', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 800, fontSize: 15 }}>💾 Save + Auto Sync</button>
-            <button onClick={onClose} style={S.ghostBtn}>Close</button>
-          </div>
-        )}
-        {!isAdmin && <button onClick={onClose} style={{ ...S.ghostBtn, width: '100%', marginTop: 14, padding: '10px' }}>Close</button>}
+        {/* FIX 5: Both admin & viewer can edit & save Info */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '1px solid #1e293b' }}>
+          <button onClick={() => onSave({ ...form, monthly: tenant.monthly || emptyMonthly() })}
+            style={{ flex: 1, background: '#f59e0b', border: 'none', color: '#1a1000', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 800, fontSize: 15 }}>💾 Save + Auto Sync</button>
+          <button onClick={onClose} style={S.ghostBtn}>Close</button>
+        </div>
       </div>
     </div>
   );
@@ -459,6 +457,37 @@ function AnalyticsTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
           </div>
         </div>
 
+        {/* FIX 4: Collector totals — all time and this month */}
+        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }}>Collector Totals</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 10, marginBottom: 14 }}>
+          {COLLECTORS.map(col => {
+            const c = COLLECTOR_COLORS[col] || '#94a3b8';
+            const thisMonth = allTenants.reduce((s, t) => {
+              const md = t.monthly?.[selectedMonth];
+              return md?.collector === col ? s + (parseFloat(md.amount) || 0) : s;
+            }, 0);
+            const allTime = allTenants.reduce((s, t) =>
+              s + MONTHS.reduce((ss, m) => {
+                const md = t.monthly?.[m];
+                return md?.collector === col ? ss + (parseFloat(md.amount) || 0) : ss;
+              }, 0), 0);
+            if (allTime === 0) return null;
+            return (
+              <div key={col} style={{ background: `linear-gradient(135deg,${c}14,#111827)`, borderRadius: 12, padding: '12px 14px', border: `1px solid ${c}44` }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: c, marginBottom: 6 }}>{col}</div>
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>{selectedMonth}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#f1f5f9' }}>₹{fmtNum(thisMonth)}</div>
+                </div>
+                <div style={{ borderTop: `1px solid ${c}22`, paddingTop: 6 }}>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>All Time Total</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: c }}>₹{fmtNum(allTime)}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         {/* Per-PG analytics */}
         <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }}>PG-wise Breakdown — {selectedMonth}</div>
         {pgAnalytics.filter(p => p.total > 0).map(({ pgName, expected, collected, paidCount, total, color }) => {
@@ -545,15 +574,17 @@ export default function App() {
   const allTenants = Object.values(pgData).flat();
 
   // FIX 1+6: Sort by joining date (pure date, day-level) — ascending (oldest first for active, left tenants at bottom)
+  // FIX 1: Sort by DAY NUMBER only (1→31), month/year ignored
+  // e.g. 01-Jan, 03-Mar, 15-Aug, 28-Dec — only the day matters
   const sortedTenants = [...tenants].sort((a, b) => {
     const aLeft = a.dateLeaving && new Date(a.dateLeaving) < new Date();
     const bLeft = b.dateLeaving && new Date(b.dateLeaving) < new Date();
     if (aLeft && !bLeft) return 1;   // left always goes to bottom
     if (!aLeft && bLeft) return -1;
-    // FIX 1: Sort by full date (day 1 first, day 31 last = ascending joining date)
-    const dA = a.dateJoining ? new Date(a.dateJoining).getTime() : 0;
-    const dB = b.dateJoining ? new Date(b.dateJoining).getTime() : 0;
-    return dA - dB; // ascending: 1 Jan → 31 Dec
+    // Extract only the day-of-month (1–31), ignore month & year
+    const dayA = a.dateJoining ? new Date(a.dateJoining).getDate() : 32;
+    const dayB = b.dateJoining ? new Date(b.dateJoining).getDate() : 32;
+    return dayA - dayB;
   });
 
   const filteredTenants = sortedTenants.filter(t =>
@@ -769,8 +800,8 @@ export default function App() {
                 {depositPending.length === 0
                   ? <div style={{ color: '#22c55e', fontSize: 14, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
                   : depositPending.map(t => (
-                    <div key={t.name} onClick={() => isAdmin && setInfoModal(t)}
-                      style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', cursor: isAdmin ? 'pointer' : 'default' }}>
+                    <div key={t.name}
+                      style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b' }}>
                       <div>
                         <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
                         <div style={{ fontSize: 12, color: '#64748b' }}>{fmtDate(t.dateJoining)} • Rent ₹{fmtNum(t.rent)}</div>
@@ -844,8 +875,8 @@ export default function App() {
               const rl = { unpaid: 'Not Paid', half: `Half ₹${fmtNum(paid)}`, full: `✅ ₹${fmtNum(paid)}` }[rs];
               return (
                 <div key={t.name + t.dateJoining}
-                  onClick={() => isAdmin && !isLeft && setInfoModal(t)}
-                  style={{ background: '#111827', borderRadius: 12, padding: '12px 14px', border: `1px solid ${rs !== 'full' && !isLeft ? rc + '55' : '#1e293b'}`, cursor: isAdmin && !isLeft ? 'pointer' : 'default', marginBottom: 8, opacity: isLeft ? 0.45 : 1 }}>
+                  onClick={() => !isLeft && setInfoModal(t)}
+                  style={{ background: '#111827', borderRadius: 12, padding: '12px 14px', border: `1px solid ${rs !== 'full' && !isLeft ? rc + '55' : '#1e293b'}`, cursor: !isLeft ? 'pointer' : 'default', marginBottom: 8, opacity: isLeft ? 0.45 : 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
