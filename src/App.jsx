@@ -159,7 +159,7 @@ function LoginScreen({ onLogin }) {
       <div style={{ fontSize: 26, fontWeight: 800, color: '#f8fafc' }}>PG Manager</div>
       <div style={{ fontSize: 14, color: '#64748b', marginBottom: 8 }}>Login karein</div>
       <button onClick={() => setMode('admin')} style={S.bigBtn('#6366f1')}>🔐 Admin Login</button>
-      <button onClick={() => onLogin('viewer')} style={S.bigBtn('#1e293b', '#94a3b8')}>👁 Sirf Dekhna Hai</button>
+      <button onClick={() => onLogin('viewer')} style={S.bigBtn('#1e293b', '#94a3b8')}>👁 Viewer</button>
     </div>
   );
   return (
