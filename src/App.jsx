@@ -10,6 +10,39 @@ const COLLECTOR_COLORS = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other':
 // Ye sheets PG tabs mein nahi dikhni chahiye (Sheet ke non-PG tabs)
 const EXCLUDED_SHEETS = ['Dashboard', 'Monthly_Calculation', '_meta'];
 
+// UPI ID for payment
+const UPI_ID = '845972276@ptsbi';
+
+// WhatsApp message builders
+function waRentMsg(name, month, dueAmt) {
+  return encodeURIComponent(
+    'Hi ' + name + ',\n\n' +
+    'Aapka ' + month + ' ka rent pending hai.\n\n' +
+    'Please is UPI ID par payment kar dein:\n' +
+    UPI_ID + '\n\n' +
+    (dueAmt ? 'Due amount: ₹' + dueAmt + '\n\n' : '') +
+    'Payment ho jaaye to confirm kar dena.\n\nThank you 🙂'
+  );
+}
+
+function waDepositMsg(name, daysOverdue) {
+  return encodeURIComponent(
+    'Hi ' + name + ',\n\n' +
+    'Aapka security deposit abhi bhi pending hai' +
+    (daysOverdue > 0 ? ' (' + daysOverdue + ' din ho gaye joining ke).' : '.') + '\n\n' +
+    'Please is UPI ID par deposit bhej dein:\n' +
+    UPI_ID + '\n\n' +
+    'Confirm kar dena payment ke baad.\n\nThank you 🙂'
+  );
+}
+
+function waLink(contact, msgEncoded) {
+  var num = contact.replace(/\s/g, '').replace(/^0/, '');
+  // Add 91 prefix if not already there
+  if (!num.startsWith('91') && num.length === 10) num = '91' + num;
+  return 'https://wa.me/' + num + '?text=' + msgEncoded;
+}
+
 // Helper: kya ye sheet ek valid PG hai?
 function isValidPG(name) {
   return !EXCLUDED_SHEETS.includes(name) && !name.startsWith('_');
@@ -165,7 +198,7 @@ function TenantInfoModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <a href={`tel:${tenant.contact.replace(/\s/g, '')}`}
               style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: '#22c55e', color: '#fff', padding: '11px', borderRadius: 10, textDecoration: 'none', fontSize: 15, fontWeight: 800 }}>📞 Call</a>
-            <a href={`https://wa.me/91${tenant.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(tenant.name)}!%20PG%20rent%20reminder%20-%20please%20clear%20dues.`}
+            <a href={waLink(tenant.contact, waRentMsg(tenant.name, 'is month', ''))}
               target="_blank" rel="noreferrer"
               style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: '#25d366', color: '#fff', padding: '11px', borderRadius: 10, textDecoration: 'none', fontSize: 15, fontWeight: 800 }}>💬 WhatsApp</a>
           </div>
@@ -226,7 +259,7 @@ function TenantPaymentModal({ tenant, selectedPG, pgColor, onClose, onSave }) {
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <a href={`tel:${tenant.contact.replace(/\s/g, '')}`}
               style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: '#22c55e', color: '#fff', padding: '11px', borderRadius: 10, textDecoration: 'none', fontSize: 15, fontWeight: 800 }}>📞 Call</a>
-            <a href={`https://wa.me/91${tenant.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(tenant.name)}!%20PG%20rent%20reminder%20-%20please%20clear%20dues.`}
+            <a href={waLink(tenant.contact, waRentMsg(tenant.name, 'is month', ''))}
               target="_blank" rel="noreferrer"
               style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: '#25d366', color: '#fff', padding: '11px', borderRadius: 10, textDecoration: 'none', fontSize: 15, fontWeight: 800 }}>💬 WhatsApp</a>
           </div>
@@ -570,7 +603,7 @@ export default function App() {
   const [infoModal, setInfoModal] = useState(null);
   const [payModal, setPayModal] = useState(null);
   const [urlDraft, setUrlDraft] = useState(webAppUrl);
-  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
+  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', depositPaid: '', rent: '', rentPaidOnJoining: '', dateJoining: '', dateLeaving: '', note: '' });
   const [pendingTab, setPendingTab] = useState('rent');
 
   const isAdmin = userRole === 'admin';
@@ -700,6 +733,24 @@ export default function App() {
     (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) < (parseFloat(t.rent) || 0)
   );
   const depositPending = active.filter(t => !t.deposit || t.deposit === '' || t.deposit === '0');
+  
+  // FIX 5: Deposit pending 15+ days after joining
+  const depositOverdue = active.filter(t => {
+    const noDeposit = !t.deposit || t.deposit === '' || t.deposit === '0';
+    if (!noDeposit) return false;
+    if (!t.dateJoining) return false;
+    const joined = new Date(t.dateJoining);
+    const today = new Date();
+    const daysSince = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
+    return daysSince >= 15; // 15+ days beet gaye, deposit nahi diya
+  });
+  
+  // Partial deposit check (depositPaid < deposit)
+  const depositPartial = active.filter(t => {
+    const paid = parseFloat(t.depositPaid) || 0;
+    const expected = parseFloat(t.deposit) || 0;
+    return expected > 0 && paid > 0 && paid < expected;
+  });
   const halfPaid = active.filter(t => { const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0; const r = parseFloat(t.rent) || 0; return p > 0 && p < r; });
 
   const monthlyBar = MONTHS.map(m => ({ m, total: tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[m]?.amount) || 0), 0) }));
@@ -727,10 +778,35 @@ export default function App() {
   // FIX 3+6: Both admin & viewer can add tenant (prepend = newest on top after sort)
   async function addTenant() {
     if (!newTenant.name.trim()) return showToast('Naam zaroor daalo', 'error');
-    const tenant = { ...newTenant, monthly: emptyMonthly() };
+    
+    // FIX 1: Handle partial payment on joining
+    // If rentPaidOnJoining is filled → pre-fill joining month's payment
+    const monthly = emptyMonthly();
+    const joiningDate = newTenant.dateJoining ? new Date(newTenant.dateJoining) : new Date();
+    const joiningMonthName = MONTHS[joiningDate.getMonth()];
+    
+    if (newTenant.rentPaidOnJoining && parseFloat(newTenant.rentPaidOnJoining) > 0) {
+      const paid = parseFloat(newTenant.rentPaidOnJoining);
+      const fullRent = parseFloat(newTenant.rent) || 0;
+      monthly[joiningMonthName] = {
+        amount: String(paid),
+        halfFull: paid >= fullRent ? 'Full' : 'Half',
+        collector: 'Cash/other',
+        note: 'Paid at joining'
+      };
+    }
+
+    // Build tenant object (depositPaid = amount actually given, deposit = total expected)
+    const { rentPaidOnJoining, depositPaid, ...rest } = newTenant;
+    const tenant = {
+      ...rest,
+      depositPaid: depositPaid || '',   // how much deposit actually received
+      monthly
+    };
+    
     const newData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
     setPgData(newData);
-    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
+    setNewTenant({ name: '', contact: '', deposit: '', depositPaid: '', rent: '', rentPaidOnJoining: '', dateJoining: '', dateLeaving: '', note: '' });
     setShowAddTenant(false);
     showToast('✅ Tenant added!', 'success');
     await doPush(newData);
@@ -866,13 +942,32 @@ export default function App() {
                 ))}
               </div>
               {pendingTab === 'rent' && (<>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 12, color: '#64748b' }}>{selectedMonth} — {rentPending.length} pending</span>
                   <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
-                    {/* FIX 2: due amount always visible */}
                     ₹{fmtNum(rentPending.reduce((s, t) => s + ((parseFloat(t.rent) || 0) - (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)), 0))} due
                   </span>
                 </div>
+                {/* FIX 5: Send All Rent Reminders button */}
+                {rentPending.filter(t => t.contact).length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 5 }}>
+                      💡 Ek ek karke WhatsApp open hoga — har ek ke liye Send dabao
+                    </div>
+                    <button
+                      onClick={() => {
+                        rentPending.filter(t => t.contact).forEach((t, i) => {
+                          const due = fmtNum((parseFloat(t.rent)||0)-(parseFloat(t.monthly?.[selectedMonth]?.amount)||0));
+                          setTimeout(() => {
+                            window.open(waLink(t.contact, waRentMsg(t.name, selectedMonth, due)), '_blank');
+                          }, i * 800); // 800ms gap between each
+                        });
+                      }}
+                      style={{ width: '100%', background: '#25d36622', border: '1px solid #25d36655', color: '#25d366', padding: '9px', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                      💬 Send All Rent Reminders ({rentPending.filter(t => t.contact).length})
+                    </button>
+                  </div>
+                )}
                 {rentPending.length === 0
                   ? <div style={{ color: '#22c55e', fontSize: 14, padding: '8px 0' }}>✅ Sab ne rent de diya!</div>
                   : rentPending.map(t => {
@@ -888,7 +983,7 @@ export default function App() {
                             <div style={{ display: 'flex', gap: 6, marginTop: 5 }} onClick={e => e.stopPropagation()}>
                               <a href={`tel:${t.contact.replace(/\s/g, '')}`}
                                 style={{ background: '#22c55e18', border: '1px solid #22c55e33', color: '#22c55e', padding: '3px 9px', borderRadius: 16, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>📞 Call</a>
-                              <a href={`https://wa.me/91${t.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(t.name)}!%20${encodeURIComponent(selectedMonth)}%20ka%20rent%20pending%20hai.`}
+                              <a href={waLink(t.contact, waRentMsg(t.name, selectedMonth, fmtNum((parseFloat(t.rent)||0)-(parseFloat(t.monthly?.[selectedMonth]?.amount)||0))))}
                                 target="_blank" rel="noreferrer"
                                 style={{ background: '#25d36618', border: '1px solid #25d36633', color: '#25d366', padding: '3px 9px', borderRadius: 16, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>💬 WA</a>
                             </div>
@@ -905,19 +1000,82 @@ export default function App() {
                 }
               </>)}
               {pendingTab === 'deposit' && (<>
-                <div style={{ marginBottom: 8 }}><span style={{ fontSize: 12, color: '#64748b' }}>{depositPending.length} tenants bina deposit ke</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: '#64748b' }}>{depositPending.length} bina deposit • {depositOverdue.length} overdue (15+ days)</span>
+                </div>
+                
+                {/* FIX 5: Send deposit reminders for 15+ day overdue */}
+                {depositOverdue.filter(t => t.contact).length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ background: '#ef444418', border: '1px solid #ef444433', borderRadius: 8, padding: '8px 12px', marginBottom: 6 }}>
+                      <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>🔴 {depositOverdue.length} tenants — 15+ days se deposit pending!</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        depositOverdue.filter(t => t.contact).forEach((t, i) => {
+                          const joined = new Date(t.dateJoining);
+                          const days = Math.floor((new Date() - joined) / (1000*60*60*24));
+                          setTimeout(() => {
+                            window.open(waLink(t.contact, waDepositMsg(t.name, days)), '_blank');
+                          }, i * 800);
+                        });
+                      }}
+                      style={{ width: '100%', background: '#ef444422', border: '1px solid #ef444455', color: '#ef4444', padding: '9px', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+                      💬 Send Deposit Reminders ({depositOverdue.filter(t => t.contact).length} overdue)
+                    </button>
+                  </div>
+                )}
+
+                {/* Partial deposit */}
+                {depositPartial.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 5, textTransform: 'uppercase', letterSpacing: .5 }}>Partial Deposit</div>
+                    {depositPartial.map(t => {
+                      const paid = parseFloat(t.depositPaid) || 0;
+                      const expected = parseFloat(t.deposit) || 0;
+                      const remaining = expected - paid;
+                      return (
+                        <div key={t.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #1e293b', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>Paid: ₹{fmtNum(paid)} / Expected: ₹{fmtNum(expected)}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 13 }}>₹{fmtNum(remaining)} baaki</div>
+                            {t.contact && (
+                              <a href={waLink(t.contact, waDepositMsg(t.name, 0))} target="_blank" rel="noreferrer"
+                                style={{ fontSize: 11, color: '#25d366', textDecoration: 'none', fontWeight: 700 }}>💬 Remind</a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {depositPending.length === 0
                   ? <div style={{ color: '#22c55e', fontSize: 14, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
-                  : depositPending.map(t => (
-                    <div key={t.name}
-                      style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b' }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
-                        <div style={{ fontSize: 12, color: '#64748b' }}>{fmtDate(t.dateJoining)} • Rent ₹{fmtNum(t.rent)}</div>
+                  : depositPending.map(t => {
+                    const joined = new Date(t.dateJoining);
+                    const days = t.dateJoining ? Math.floor((new Date() - joined) / (1000*60*60*24)) : 0;
+                    const isOverdue = days >= 15;
+                    return (
+                      <div key={t.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
+                          <div style={{ fontSize: 12, color: '#64748b' }}>{fmtDate(t.dateJoining)} • {days} din {isOverdue ? '🔴' : '🟡'}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 700, fontSize: 12 }}>{isOverdue ? 'Overdue!' : 'Pending'}</div>
+                          {t.contact && (
+                            <a href={waLink(t.contact, waDepositMsg(t.name, days))} target="_blank" rel="noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              style={{ fontSize: 11, color: '#25d366', textDecoration: 'none', fontWeight: 700, marginTop: 3, display: 'block' }}>💬 Remind</a>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 13 }}>No Deposit ⚠</div>
-                    </div>
-                  ))
+                    );
+                  })
                 }
               </>)}
             </div>
@@ -958,14 +1116,24 @@ export default function App() {
                     <Input label="Contact" value={newTenant.contact} onChange={v => setNewTenant(p => ({ ...p, contact: v }))} />
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <Input label="Deposit ₹" value={newTenant.deposit} onChange={v => setNewTenant(p => ({ ...p, deposit: v }))} />
+                    <Input label="Deposit Expected ₹" value={newTenant.deposit} onChange={v => setNewTenant(p => ({ ...p, deposit: v }))} />
+                    <Input label="Deposit Paid ₹ (abhi tak)" value={newTenant.depositPaid} onChange={v => setNewTenant(p => ({ ...p, depositPaid: v }))} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
                     <Input label="Rent ₹/mo" value={newTenant.rent} onChange={v => setNewTenant(p => ({ ...p, rent: v }))} />
+                    <Input label="Joining Month Rent Paid ₹ (0 if unpaid)" value={newTenant.rentPaidOnJoining} onChange={v => setNewTenant(p => ({ ...p, rentPaidOnJoining: v }))} />
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <Input label="Date Joining" type="date" value={newTenant.dateJoining} onChange={v => setNewTenant(p => ({ ...p, dateJoining: v }))} />
                     <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
                   </div>
                   <Input label="Note" value={newTenant.note} onChange={v => setNewTenant(p => ({ ...p, note: v }))} />
+                  {/* FIX 1: Show partial payment summary */}
+                  {(newTenant.depositPaid && newTenant.deposit && parseFloat(newTenant.depositPaid) < parseFloat(newTenant.deposit)) && (
+                    <div style={{ background: '#f59e0b18', border: '1px solid #f59e0b44', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#f59e0b' }}>
+                      ⚠ Deposit baaki: ₹{fmtNum(parseFloat(newTenant.deposit) - parseFloat(newTenant.depositPaid))} — baad mein milega
+                    </div>
+                  )}
                   <button onClick={addTenant}
                     style={{ background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>
                     ✅ Add Tenant + Auto Sync
@@ -1005,7 +1173,7 @@ export default function App() {
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
                           <a href={`tel:${t.contact.replace(/\s/g, '')}`}
                             style={{ background: '#22c55e18', border: '1px solid #22c55e33', color: '#22c55e', padding: '4px 10px', borderRadius: 20, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>📞 Call</a>
-                          <a href={`https://wa.me/91${t.contact.replace(/\s/g, '')}?text=Namaste%20${encodeURIComponent(t.name)}!%20PG%20rent%20reminder%20-%20please%20clear%20dues.`}
+                          <a href={waLink(t.contact, waRentMsg(t.name, selectedMonth, ''))}
                             target="_blank" rel="noreferrer"
                             style={{ background: '#25d36618', border: '1px solid #25d36633', color: '#25d366', padding: '4px 10px', borderRadius: 20, textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>💬 WA</a>
                         </div>
