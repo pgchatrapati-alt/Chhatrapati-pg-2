@@ -6,6 +6,14 @@ import { pushToSheets, pullFromSheets, pingSheet } from './sync.js';
 const COLLECTORS = ['Vishnu', 'Mahendra', 'Cash/other'];
 const ADMIN_PASSWORD = 'admin123';
 const COLLECTOR_COLORS = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b' };
+
+// Ye sheets PG tabs mein nahi dikhni chahiye (Sheet ke non-PG tabs)
+const EXCLUDED_SHEETS = ['Dashboard', 'Monthly_Calculation', '_meta'];
+
+// Helper: kya ye sheet ek valid PG hai?
+function isValidPG(name) {
+  return !EXCLUDED_SHEETS.includes(name) && !name.startsWith('_');
+}
 const FS = 15; // base font size +1
 
 function emptyMonthly() {
@@ -556,12 +564,44 @@ export default function App() {
     setSyncStatus('syncing'); showToast('⬇ Pulling…', 'info');
     const res = await pullFromSheets(webAppUrl);
     if (res.success && res.data) {
-      const merged = { ...pgData };
-      Object.keys(res.data).forEach(pg => { if (res.data[pg]?.length > 0) merged[pg] = res.data[pg]; });
+      // Filter out non-PG sheets (Dashboard, Monthly_Calculation etc.)
+      const merged = {};
+      // First keep existing valid PGs
+      Object.keys(pgData).forEach(pg => { if (isValidPG(pg)) merged[pg] = pgData[pg]; });
+      // Merge new data from sheet (only valid PG sheets)
+      Object.keys(res.data).forEach(pg => {
+        if (isValidPG(pg) && res.data[pg]?.length > 0) merged[pg] = res.data[pg];
+      });
       setPgData(merged); markSync(); setSyncStatus('ok'); showToast('✅ Data updated!');
       setTimeout(() => setSyncStatus('idle'), 4000);
     } else { setSyncStatus('error'); showToast('❌ ' + (res.error || 'Pull failed'), 'error'); setTimeout(() => setSyncStatus('idle'), 5000); }
   };
+  // FIX: Clear localStorage pgData and re-pull fresh from sheet
+  const doClearAndPull = async () => {
+    if (!webAppUrl) { showToast('Settings mein URL daalo pehle', 'warn'); return; }
+    setSyncStatus('syncing');
+    showToast('⏳ Cache clear karke fresh pull…', 'info');
+    const res = await pullFromSheets(webAppUrl);
+    if (res.success && res.data) {
+      // Start completely fresh — only valid PG sheets
+      const fresh = {};
+      Object.keys(res.data).forEach(pg => {
+        if (isValidPG(pg)) fresh[pg] = res.data[pg];
+      });
+      setPgData(fresh);
+      // Reset selectedPG to first valid one
+      const firstPG = Object.keys(fresh)[0];
+      if (firstPG) setSelectedPG(firstPG);
+      markSync(); setSyncStatus('ok');
+      showToast('✅ Fresh data loaded! Cache clear ho gaya.');
+      setTimeout(() => setSyncStatus('idle'), 4000);
+    } else {
+      setSyncStatus('error');
+      showToast('❌ ' + (res.error || 'Pull failed'), 'error');
+      setTimeout(() => setSyncStatus('idle'), 5000);
+    }
+  };
+
   const doTest = async () => {
     if (!webAppUrl) { showToast('URL daalo pehle', 'warn'); return; }
     setSyncStatus('syncing');
@@ -601,6 +641,8 @@ export default function App() {
 
   const monthlyBar = MONTHS.map(m => ({ m, total: tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[m]?.amount) || 0), 0) }));
   const barMax = Math.max(...monthlyBar.map(x => x.total), 1);
+  // Filter: sirf valid PG sheets dikhao (no Dashboard, Monthly_Calculation etc.)
+  const allPGs = Object.keys(pgData).filter(isValidPG);
   const pgColor = PG_COLORS[selectedPG] || '#6366f1';
   const syncDot = { idle: '#475569', syncing: '#f59e0b', ok: '#22c55e', error: '#ef4444' }[syncStatus];
 
@@ -656,11 +698,15 @@ export default function App() {
           <div style={{ fontWeight: 700, color: '#94a3b8', marginBottom: 8, fontSize: 14 }}>🔗 Google Sheets Auto-Sync</div>
           <input value={urlDraft} onChange={e => setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec"
             style={{ ...S.input, width: '100%', marginBottom: 8 }} />
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
             <button onClick={() => { setWebAppUrl(urlDraft); showToast('URL saved ✓'); setShowSettings(false); }} style={S.greenBtn}>💾 Save</button>
             <button onClick={doTest} style={S.blueBtn}>🔌 Test</button>
             <button onClick={doPull} style={S.ghostBtn}>⬇ Pull</button>
           </div>
+          <button onClick={doClearAndPull}
+            style={{ width: '100%', background: '#ef444422', border: '1px solid #ef444466', color: '#ef4444', padding: '8px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
+            🗑 Cache Clear + Fresh Pull (Dashboard/Monthly_Calculation hatane ke liye)
+          </button>
           <div style={{ background: '#0a0f1e', borderRadius: 8, padding: 12, fontSize: 12, color: '#64748b', lineHeight: 2 }}>
             <b style={{ color: '#94a3b8' }}>Setup:</b> Google Sheet → Extensions → Apps Script → paste GoogleAppsScript_PG_Sync_v2.js → Deploy → Web App → URL yahan paste
           </div>
