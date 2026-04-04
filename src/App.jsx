@@ -14,6 +14,33 @@ const EXCLUDED_SHEETS = ['Dashboard', 'Monthly_Calculation', '_meta'];
 function isValidPG(name) {
   return !EXCLUDED_SHEETS.includes(name) && !name.startsWith('_');
 }
+
+// FIX 1: Tenant kisi month ke liye active hai?
+// Agar tenant ka joining date uss month ke baad hai → wo pending nahi hai
+// Example: joined 01 Apr 2026 → Jan 2026 mein pending nahi dikhna chahiye
+function tenantActiveInMonth(tenant, monthName) {
+  if (!tenant.dateJoining) return true; // no joining date = always active
+  const joinDate = new Date(tenant.dateJoining);
+  const joinYear = joinDate.getFullYear();
+  const joinMonth = joinDate.getMonth(); // 0-indexed
+
+  const MONTHS_IDX = {
+    January:0,February:1,March:2,April:3,May:4,June:5,
+    July:6,August:7,September:8,October:9,November:10,December:11
+  };
+  const selIdx = MONTHS_IDX[monthName];
+  if (selIdx === undefined) return true;
+
+  // Assume current year for selected month
+  // If joining is AFTER the selected month of same year → not active
+  const now = new Date();
+  const selYear = now.getFullYear(); // current display year
+
+  // Tenant joined after the selected month-year → not active yet
+  if (joinYear > selYear) return false;
+  if (joinYear === selYear && joinMonth > selIdx) return false;
+  return true;
+}
 const FS = 15; // base font size +1
 
 function emptyMonthly() {
@@ -341,21 +368,23 @@ function AnalyticsTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
   const active = allTenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
 
   // Payment status counts
-  const fullyPaid = active.filter(t => {
+  // FIX 1: Filter out future tenants from selectedMonth stats
+  const activeThisMonth = active.filter(t => tenantActiveInMonth(t, selectedMonth));
+  const fullyPaid = activeThisMonth.filter(t => {
     const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
     const r = parseFloat(t.rent) || 0;
     return r > 0 && p >= r;
   }).length;
-  const halfPaidCount = active.filter(t => {
+  const halfPaidCount = activeThisMonth.filter(t => {
     const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
     const r = parseFloat(t.rent) || 0;
     return p > 0 && p < r;
   }).length;
-  const unpaidCount = active.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)).length;
+  const unpaidCount = activeThisMonth.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)).length;
   const noDepositCount = active.filter(t => !t.deposit || t.deposit === '' || t.deposit === '0').length;
 
   const totalCollected = allTenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
-  const totalExpected = active.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
+  const totalExpected = activeThisMonth.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
   const totalDue = Math.max(0, totalExpected - totalCollected);
 
   // Deposit stats
@@ -550,6 +579,36 @@ export default function App() {
   const showToast = useCallback((msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
   const markSync = () => setLastSync(new Date().toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }));
 
+  // FIX 2+3: Auto-pull on app load — viewer & admin dono ko fresh data milega
+  // Jab bhi app open ho ya page refresh ho → sheet se latest data lo
+  useEffect(() => {
+    if (!webAppUrl || !userRole) return; // URL ya login na ho to skip
+    // Silent auto-pull: no toast, no loading indicator
+    (async () => {
+      try {
+        const res = await pullFromSheets(webAppUrl);
+        if (res.success && res.data) {
+          const merged = {};
+          // Start fresh with valid PGs only
+          Object.keys(pgData).forEach(pg => { if (isValidPG(pg)) merged[pg] = pgData[pg]; });
+          Object.keys(res.data).forEach(pg => {
+            if (isValidPG(pg) && res.data[pg]?.length > 0) merged[pg] = res.data[pg];
+          });
+          setPgData(merged);
+          markSync();
+          // If selectedPG got removed, reset to first
+          if (!merged[selectedPG]) {
+            const first = Object.keys(merged)[0];
+            if (first) setSelectedPG(first);
+          }
+        }
+      } catch (e) {
+        // Silent fail — just use cached data
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole, webAppUrl]); // runs when user logs in or URL changes
+
   const doPush = useCallback(async (data, silent = false) => {
     if (!webAppUrl) { if (!silent) showToast('Settings mein Web App URL daalo', 'warn'); return false; }
     setSyncStatus('syncing');
@@ -635,7 +694,11 @@ export default function App() {
   const totalRent = active.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
   const collected = tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
   const grandTotal = allTenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
-  const rentPending = active.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) < (parseFloat(t.rent) || 0));
+  // FIX 1: Only show pending for tenants who joined ON or BEFORE the selectedMonth
+  const rentPending = active.filter(t =>
+    tenantActiveInMonth(t, selectedMonth) &&
+    (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) < (parseFloat(t.rent) || 0)
+  );
   const depositPending = active.filter(t => !t.deposit || t.deposit === '' || t.deposit === '0');
   const halfPaid = active.filter(t => { const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0; const r = parseFloat(t.rent) || 0; return p > 0 && p < r; });
 
