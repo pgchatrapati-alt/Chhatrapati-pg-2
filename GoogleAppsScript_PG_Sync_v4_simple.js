@@ -246,12 +246,21 @@ function writeData(pgData) {
       sheet = ss.insertSheet(pgName);
     }
 
-    const tenants = pgData[pgName] || [];
-    Logger.log("Writing " + pgName + ": " + tenants.length + " tenants");
+    const tenants = pgData[pgName];
+    const tenantCount = Array.isArray(tenants) ? tenants.length : 0;
+    Logger.log("🔍 " + pgName + ": tenants type=" + typeof tenants + ", isArray=" + Array.isArray(tenants) + ", length=" + tenantCount);
+    
+    // CRITICAL: NEVER process a PG that wasn't in the request
+    if (tenants === undefined) {
+      Logger.log("⚠️⚠️⚠️ SKIPPING " + pgName + " - NOT IN REQUEST (will preserve old data)");
+      return;
+    }
+    
+    Logger.log("  Writing " + pgName + ": " + tenantCount + " tenants");
 
-    // SAFETY: If no tenants for this PG, skip it (don't delete data!)
-    if (!tenants || tenants.length === 0) {
-      Logger.log("⚠️ Skipping " + pgName + " - empty tenant list");
+    // SAFETY: If explicitly sent as empty array, skip (don't delete data!)
+    if (!Array.isArray(tenants) || tenants.length === 0) {
+      Logger.log("  ⚠️ Skipping " + pgName + " - empty tenant list, will NOT touch sheet");
       return; // Skip this PG, don't delete its data
     }
 
