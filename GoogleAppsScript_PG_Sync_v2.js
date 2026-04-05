@@ -98,8 +98,7 @@ function readAllData() {
 
     for (let r = 1; r < data.length; r++) {
       const row = data[r];
-      // Skip empty rows or rows where name is blank/undefined
-      if (!row[0] || String(row[0]).trim() === '') continue;
+      if (!row[0]) continue;
 
       const formatDate = function(val) {
         if (!val) return "";
@@ -166,27 +165,15 @@ function writeData(pgData) {
     const tenants = pgData[pgName] || [];
     const rows = [headers];
 
-    // FIX 6: Sort tenants by day-of-month (1->31), left tenants at bottom
-    tenants.sort(function(a, b) {
-      var aLeft = a.dateLeaving && a.dateLeaving !== "";
-      var bLeft = b.dateLeaving && b.dateLeaving !== "";
-      if (aLeft && !bLeft) return 1;
-      if (!aLeft && bLeft) return -1;
-      var dayA = a.dateJoining ? new Date(a.dateJoining).getDate() : 32;
-      var dayB = b.dateJoining ? new Date(b.dateJoining).getDate() : 32;
-      return dayA - dayB;
-    });
-
     tenants.forEach(function(t) {
-      var isLeft = t.dateLeaving && t.dateLeaving !== "";
-      var row = [
+      const row = [
         t.name        || "",
         t.contact     || "",
         t.deposit     || "",
         t.rent        || "",
         t.dateJoining || "",
         t.dateLeaving || "",
-        isLeft ? (t.note ? t.note + " [LEFT]" : "[LEFT]") : (t.note || "")
+        t.note        || ""
       ];
 
       MONTHS.forEach(function(m) {
