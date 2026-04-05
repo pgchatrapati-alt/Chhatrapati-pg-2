@@ -404,9 +404,23 @@ export default function App() {
   const pgColor = PG_COLORS[selectedPG] || '#6366f1';
   const syncDot = { idle: '#475569', syncing: '#f59e0b', ok: '#22c55e', error: '#ef4444' }[syncStatus];
 
+  // SAFETY: Validate that tenant has all required properties before saving
+  function validateTenant(tenant) {
+    const required = ['name', 'contact', 'deposit', 'rent', 'dateJoining', 'dateLeaving', 'note', 'monthly'];
+    const cleaned = {};
+    required.forEach(key => {
+      cleaned[key] = tenant[key] !== undefined ? tenant[key] : '';
+    });
+    if (!cleaned.monthly || typeof cleaned.monthly !== 'object') {
+      cleaned.monthly = emptyMonthly();
+    }
+    return cleaned;
+  }
+
   async function saveEdit(updatedTenant) {
     const key = editingTenant.name + editingTenant.dateJoining;
-    const updated = pgData[selectedPG].map(t => (t.name + t.dateJoining) === key ? updatedTenant : t);
+    const validatedTenant = validateTenant(updatedTenant);
+    const updated = pgData[selectedPG].map(t => (t.name + t.dateJoining) === key ? validatedTenant : t);
     const newData = { ...pgData, [selectedPG]: updated };
     setPgData(newData); setEditingTenant(null);
     await doPush(newData);
@@ -415,7 +429,7 @@ export default function App() {
   // FIX 5+6: Add tenant — new tenant goes to top (we prepend)
   async function addTenant() {
     if (!newTenant.name.trim()) return showToast('Naam zaroor daalo', 'error');
-    const tenant = { ...newTenant, monthly: emptyMonthly() };
+    const tenant = validateTenant({ ...newTenant, monthly: emptyMonthly() });
     // Prepend so new tenants appear at top
     const newData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
     setPgData(newData);

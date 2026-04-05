@@ -37,17 +37,44 @@ function handleRequest(e) {
   try {
     // Support both GET params and POST body
     let action, data;
+    
+    Logger.log("Request received. postData exists: " + (e.postData ? "yes" : "no"));
 
     if (e.postData && e.postData.contents) {
       // POST with JSON body
-      const body = JSON.parse(e.postData.contents);
-      action = body.action;
-      data = body.data;
+      Logger.log("Raw POST body length: " + e.postData.contents.length);
+      Logger.log("Raw POST body (first 500 chars): " + e.postData.contents.substring(0, 500));
+      
+      try {
+        const body = JSON.parse(e.postData.contents);
+        Logger.log("Parsed body keys: " + Object.keys(body).join(", "));
+        Logger.log("Body structure: " + JSON.stringify(body).substring(0, 300));
+        
+        action = body.action;
+        data = body.data;
+        
+        // Fallback: if data is undefined but body looks like pgData, use the whole body
+        if (action === "write" && (typeof data === 'undefined' || data === null)) {
+          if (typeof body === 'object' && Object.keys(body).length > 0 && !body.action) {
+            Logger.log("Fallback: body doesn't have 'action', treating whole body as pgData");
+            data = body;
+            action = "write";
+          }
+        }
+        
+        Logger.log("Final: action=" + action + ", data type=" + typeof data);
+        if (typeof data === 'object' && data !== null) {
+          Logger.log("Data keys: " + Object.keys(data).join(", ").substring(0, 200));
+        }
+      } catch (parseErr) {
+        throw new Error("Failed to parse POST body: " + parseErr.message + ". Body: " + (e.postData.contents || '').substring(0, 300));
+      }
     } else {
       // GET with URL params
       action = e.parameter.action;
       const raw = e.parameter.data;
       data = raw ? JSON.parse(raw) : null;
+      Logger.log("GET params: action=" + action + ", data received=" + (raw ? "yes" : "no"));
     }
 
     let result;
@@ -59,7 +86,12 @@ function handleRequest(e) {
       result = readAllData();
 
     } else if (action === "write") {
-      if (!data) throw new Error("No data provided");
+      // Check that data exists and is an object
+      Logger.log("Write validation: typeof data = " + typeof data + ", data = " + JSON.stringify(data).substring(0, 100));
+      
+      if (typeof data !== 'object' || data === null) {
+        throw new Error("Write action requires pgData object. Received type: " + typeof data);
+      }
       result = writeData(data);
 
     } else {
@@ -69,6 +101,8 @@ function handleRequest(e) {
     return makeResponse(result);
 
   } catch (err) {
+    Logger.log("ERROR in handleRequest: " + err.message);
+    Logger.log("Stack: " + err.stack);
     return makeResponse({ success: false, error: err.message });
   }
 }
@@ -142,6 +176,22 @@ function readAllData() {
 
 // ── WRITE: Poora PG data sheets mein likho ──────────────────
 function writeData(pgData) {
+  Logger.log("writeData called with type: " + typeof pgData);
+  Logger.log("pgData value (first 300 chars): " + JSON.stringify(pgData).substring(0, 300));
+  
+  // SAFETY: Validate pgData before processing
+  if (typeof pgData === 'undefined' || pgData === null) {
+    throw new Error("pgData is undefined or null");
+  }
+  
+  if (typeof pgData !== 'object') {
+    throw new Error("pgData must be an object, got: " + typeof pgData);
+  }
+  
+  if (Array.isArray(pgData)) {
+    throw new Error("pgData must be an object with PG names as keys, got an array");
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   const MONTHS = [
@@ -155,6 +205,7 @@ function writeData(pgData) {
   });
 
   const pgNames = Object.keys(pgData);
+  Logger.log("PG names to write: " + pgNames.join(", "));
 
   pgNames.forEach(function(pgName) {
     let sheet = ss.getSheetByName(pgName);
@@ -189,10 +240,24 @@ function writeData(pgData) {
       rows.push(row);
     });
 
-    // Clear and rewrite
-    sheet.clearContents();
-    if (rows.length > 0) {
-      sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
+    // FIXED: Only clear and rewrite the data area (not entire sheet)
+    // Delete old rows but keep formatting/metadata
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    
+    if (lastRow > 1) {
+      sheet.deleteRows(2, lastRow - 1);  // Keep header, delete data rows only
+    }
+
+    // Write new data below header
+    if (rows.length > 1) {  // rows has header + data
+      sheet.getRange(2, 1, rows.length - 1, headers.length).setValues(rows.slice(1));
+    }
+    
+    // Ensure header exists and is styled
+    if (sheet.getLastRow() === 0 || sheet.getRange(1, 1).getValue() === "") {
+      sheet.insertRows(1, 1);
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     }
 
     // Style header

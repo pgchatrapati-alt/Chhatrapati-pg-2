@@ -10,6 +10,7 @@
 async function tryFetch(url, options) {
   const resp = await fetch(url, { redirect: 'follow', ...options });
   const text = await resp.text();
+  console.log('📥 Response text (first 300): ', text.substring(0, 300));
   try { return JSON.parse(text); }
   catch { return { success: true, message: 'OK (non-JSON response)' }; }
 }
@@ -21,14 +22,29 @@ export async function sheetFetch(webAppUrl, action, data = null) {
     if (action === 'write' || action === 'ping') {
       // POST with text/plain avoids CORS preflight OPTIONS request
       // Apps Script reads this via e.postData.contents
-      const body = JSON.stringify({ action, data });
+      
+      let body;
+      if (action === 'write' && data) {
+        // For write: spread pgData directly so body is {action, Sunshine: [...], Haridarshan: [...], ...}
+        // This avoids issues with undefined values in nested structures
+        console.log('📡 [BUILD WRITE BODY] Spreading pgData directly');
+        body = JSON.stringify({ action, ...data });
+      } else {
+        // For ping: normal structure
+        body = JSON.stringify({ action, data });
+      }
+      
+      console.log('📡 [BEFORE SEND] Final POST body (first 500): ', body.substring(0, 500));
+      console.log('📡 [BEFORE SEND] Body length: ', body.length);
+      
       try {
         return await tryFetch(webAppUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body,
         });
-      } catch {
+      } catch (err) {
+        console.error('❌ POST fetch error:', err.message);
         // Fallback: no-cors (write still goes through, can't read response)
         await fetch(webAppUrl, {
           method: 'POST',
@@ -45,12 +61,59 @@ export async function sheetFetch(webAppUrl, action, data = null) {
       return await tryFetch(`${webAppUrl}?${params}`, { method: 'GET' });
     }
   } catch (e) {
+    console.error('❌ sheetFetch error:', e.message);
     return { success: false, error: e.message };
   }
 }
 
 export async function pushToSheets(webAppUrl, pgData) {
-  return sheetFetch(webAppUrl, 'write', pgData);
+  console.log('🔵 === pushToSheets CALLED ===');
+  console.log('  Checking input pgData...');
+  console.log('  Type:', typeof pgData);
+  console.log('  Is null:', pgData === null);
+  console.log('  Keys:', pgData ? Object.keys(pgData) : 'N/A');
+  
+  if (!pgData || typeof pgData !== 'object' || Array.isArray(pgData)) {
+    console.error('❌ EARLY FAIL: Invalid pgData', pgData);
+    return { success: false, error: 'Invalid pgData' };
+  }
+  
+  console.log('  ✓ pgData structure looks good');
+  
+  // Build sanitized - VERIFY each PG
+  const sanitized = {};
+  let pgCount = 0;
+  
+  Object.keys(pgData).forEach(pgName => {
+    const tenants = pgData[pgName];
+    if (Array.isArray(tenants)) {
+      sanitized[pgName] = tenants;
+      pgCount++;
+      console.log(`  ✓ Added ${pgName}: ${tenants.length} tenants`);
+    } else {
+      console.log(`  ✗ Skipped ${pgName}: not an array`);
+    }
+  });
+  
+  console.log(`✓ Sanitized: ${pgCount} PGs`);
+  console.log('  Sanitized keys:', Object.keys(sanitized));
+  
+  if (Object.keys(sanitized).length === 0) {
+    console.error('❌ SANITIZATION FAILED: Empty result!');
+    console.log('  Original pgData keys:', Object.keys(pgData));
+    Object.keys(pgData).forEach(key => {
+      console.log(`    ${key} = type ${typeof pgData[key]}, isArray=${Array.isArray(pgData[key])}`);
+    });
+    return { success: false, error: 'Sanitization produced empty data' };
+  }
+  
+  // Build the body - spread pgData directly
+  const body = JSON.stringify({ action: 'write', ...sanitized });
+  console.log('📡 POST body created:');
+  console.log('  Length:', body.length, 'chars');
+  console.log('  First 400 chars:', body.substring(0, 400));
+  
+  return sheetFetch(webAppUrl, 'write', sanitized);
 }
 
 export async function pullFromSheets(webAppUrl) {
