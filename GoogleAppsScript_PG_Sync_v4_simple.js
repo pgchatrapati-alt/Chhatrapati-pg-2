@@ -81,9 +81,14 @@ function doPost(e) {
       });
       
       if (Object.keys(pgData).length === 0) {
-        Logger.log("No pgData found via either method!");
+        Logger.log("❌ No pgData found via either method!");
         pgData = null;
       }
+    }
+    
+    Logger.log("Final pgData: " + (pgData ? "✓ Found (" + Object.keys(pgData).length + " PGs)" : "✗ Not found"));
+    if (pgData) {
+      Logger.log("  pgData keys: " + Object.keys(pgData).join(", "));
     }
     
     // Handle action
@@ -105,7 +110,7 @@ function doPost(e) {
         });
       }
       
-      Logger.log("✓ WRITE: Found pgData with " + Object.keys(pgData).length + " PGs");
+      Logger.log("✓ WRITE: pgData ready with " + Object.keys(pgData).length + " PGs");
       return writeData(pgData);
     }
     
@@ -244,6 +249,12 @@ function writeData(pgData) {
     const tenants = pgData[pgName] || [];
     Logger.log("Writing " + pgName + ": " + tenants.length + " tenants");
 
+    // SAFETY: If no tenants for this PG, skip it (don't delete data!)
+    if (!tenants || tenants.length === 0) {
+      Logger.log("⚠️ Skipping " + pgName + " - empty tenant list");
+      return; // Skip this PG, don't delete its data
+    }
+
     const rows = [headers];
 
     tenants.forEach(function(t) {
@@ -276,7 +287,7 @@ function writeData(pgData) {
       sheet.deleteRows(2, lastRow - 1);
     }
 
-    // Write new data
+    // Write new data (we know rows.length >= 1 because we checked tenants above)
     if (rows.length > 1) {
       sheet.getRange(2, 1, rows.length - 1, headers.length).setValues(rows.slice(1));
     }

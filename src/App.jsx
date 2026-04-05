@@ -334,6 +334,12 @@ export default function App() {
   const markSync = () => setLastSync(new Date().toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }));
 
   const doPush = useCallback(async (data, silent = false) => {
+    console.log('🔴 === doPush CALLED ===');
+    console.log('  Input data type:', typeof data);
+    console.log('  Input data keys:', data ? Object.keys(data) : 'N/A');
+    Object.keys(data || {}).forEach(pg => {
+      console.log(`    ${pg}: ${Array.isArray(data[pg]) ? data[pg].length : '?'} items`);
+    });
     if (!webAppUrl) { if (!silent) showToast('Settings mein Web App URL daalo', 'warn'); return false; }
     setSyncStatus('syncing');
     if (!silent) showToast('⏳ Syncing…', 'info');
@@ -421,9 +427,11 @@ export default function App() {
     const key = editingTenant.name + editingTenant.dateJoining;
     const validatedTenant = validateTenant(updatedTenant);
     const updated = pgData[selectedPG].map(t => (t.name + t.dateJoining) === key ? validatedTenant : t);
-    const newData = { ...pgData, [selectedPG]: updated };
-    setPgData(newData); setEditingTenant(null);
-    await doPush(newData);
+    const completeData = { ...pgData, [selectedPG]: updated };
+    console.log('💾 saveEdit: Sending complete pgData with', Object.keys(completeData).length, 'PGs');
+    setPgData(completeData); 
+    setEditingTenant(null);
+    await doPush(completeData);
   }
 
   // FIX 5+6: Add tenant — new tenant goes to top (we prepend)
@@ -431,12 +439,16 @@ export default function App() {
     if (!newTenant.name.trim()) return showToast('Naam zaroor daalo', 'error');
     const tenant = validateTenant({ ...newTenant, monthly: emptyMonthly() });
     // Prepend so new tenants appear at top
-    const newData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
-    setPgData(newData);
+    const completeData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
+    console.log('➕ addTenant: Sending complete pgData with', Object.keys(completeData).length, 'PGs');
+    Object.keys(completeData).forEach(pg => {
+      console.log(`  ${pg}: ${completeData[pg].length} tenants`);
+    });
+    setPgData(completeData);
     setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
     setShowAddTenant(false);
     showToast('✅ Tenant added!', 'success');
-    await doPush(newData);
+    await doPush(completeData);
   }
 
   if (!userRole) return <LoginScreen onLogin={r => setUserRole(r)} />;

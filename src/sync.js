@@ -80,38 +80,45 @@ export async function pushToSheets(webAppUrl, pgData) {
   
   console.log('  ✓ pgData structure looks good');
   
-  // Build sanitized - VERIFY each PG
+  // Build sanitized - INCLUDE ALL PGs (even empty arrays)
   const sanitized = {};
   let pgCount = 0;
+  let totalTenants = 0;
   
   Object.keys(pgData).forEach(pgName => {
     const tenants = pgData[pgName];
+    // Include ALL PGs, even if array is empty
     if (Array.isArray(tenants)) {
       sanitized[pgName] = tenants;
       pgCount++;
+      totalTenants += tenants.length;
       console.log(`  ✓ Added ${pgName}: ${tenants.length} tenants`);
+    } else if (tenants && typeof tenants === 'object' && !Array.isArray(tenants)) {
+      // If it's an object but not array, might be issue, but try to handle
+      console.log(`  ⚠️ ${pgName}: Not an array (type=${typeof tenants}), skipping`);
     } else {
-      console.log(`  ✗ Skipped ${pgName}: not an array`);
+      console.log(`  ✗ Skipped ${pgName}: invalid value`);
     }
   });
   
-  console.log(`✓ Sanitized: ${pgCount} PGs`);
+  console.log(`✓ Sanitized: ${pgCount} PGs with ${totalTenants} total tenants`);
   console.log('  Sanitized keys:', Object.keys(sanitized));
   
   if (Object.keys(sanitized).length === 0) {
     console.error('❌ SANITIZATION FAILED: Empty result!');
     console.log('  Original pgData keys:', Object.keys(pgData));
     Object.keys(pgData).forEach(key => {
-      console.log(`    ${key} = type ${typeof pgData[key]}, isArray=${Array.isArray(pgData[key])}`);
+      const val = pgData[key];
+      console.log(`    ${key}: type=${typeof val}, isArray=${Array.isArray(val)}, value=${JSON.stringify(val).substring(0, 100)}`);
     });
     return { success: false, error: 'Sanitization produced empty data' };
   }
   
-  // Build the body - spread pgData directly
+  // Build the body - spread pgData directly with action
   const body = JSON.stringify({ action: 'write', ...sanitized });
   console.log('📡 POST body created:');
-  console.log('  Length:', body.length, 'chars');
-  console.log('  First 400 chars:', body.substring(0, 400));
+  console.log('  Body length:', body.length, 'chars');
+  console.log('  Verifying structure - keys in body:', Object.keys(JSON.parse(body)));
   
   return sheetFetch(webAppUrl, 'write', sanitized);
 }
