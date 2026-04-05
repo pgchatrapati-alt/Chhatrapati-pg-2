@@ -88,6 +88,16 @@ function fmtDate(d) {
 }
 function fmtNum(n) { return parseFloat(n || 0).toLocaleString('en-IN'); }
 
+// Generate unique tenant ID (matches Apps Script format)
+// Format: PG-YYYYMMDD-XXXX
+function generateTenantId(dateJoining) {
+  const dateStr = dateJoining
+    ? dateJoining.replace(/-/g, '').slice(0, 8)
+    : new Date().toISOString().replace(/-/g, '').slice(0, 8);
+  const rand = Math.random().toString(36).toUpperCase().slice(2, 6);
+  return 'PG-' + dateStr + '-' + rand;
+}
+
 // FIX 2: blur amounts for viewer
 function Amt({ n, isViewer, due = false }) {
   const formatted = `₹${fmtNum(n)}`;
@@ -159,7 +169,7 @@ function LoginScreen({ onLogin }) {
       <div style={{ fontSize: 26, fontWeight: 800, color: '#f8fafc' }}>PG Manager</div>
       <div style={{ fontSize: 14, color: '#64748b', marginBottom: 8 }}>Login karein</div>
       <button onClick={() => setMode('admin')} style={S.bigBtn('#6366f1')}>🔐 Admin Login</button>
-      <button onClick={() => onLogin('viewer')} style={S.bigBtn('#1e293b', '#94a3b8')}>👁 Viewer</button>
+      <button onClick={() => onLogin('viewer')} style={S.bigBtn('#1e293b', '#94a3b8')}>👁 Sirf Dekhna Hai</button>
     </div>
   );
   return (
@@ -622,10 +632,14 @@ export default function App() {
         const res = await pullFromSheets(webAppUrl);
         if (res.success && res.data) {
           const merged = {};
-          // Start fresh with valid PGs only
           Object.keys(pgData).forEach(pg => { if (isValidPG(pg)) merged[pg] = pgData[pg]; });
           Object.keys(res.data).forEach(pg => {
-            if (isValidPG(pg) && res.data[pg]?.length > 0) merged[pg] = res.data[pg];
+            if (isValidPG(pg) && res.data[pg]?.length > 0) {
+              // Ensure every tenant has an ID (migration for old data)
+              merged[pg] = res.data[pg].map(t =>
+                t.id ? t : { ...t, id: generateTenantId(t.dateJoining) }
+              );
+            }
           });
           setPgData(merged);
           markSync();
@@ -796,11 +810,12 @@ export default function App() {
       };
     }
 
-    // Build tenant object (depositPaid = amount actually given, deposit = total expected)
+    // Build tenant object with unique ID
     const { rentPaidOnJoining, depositPaid, ...rest } = newTenant;
     const tenant = {
       ...rest,
-      depositPaid: depositPaid || '',   // how much deposit actually received
+      id: generateTenantId(newTenant.dateJoining), // unique ID for safe sheet updates
+      depositPaid: depositPaid || '',
       monthly
     };
     
