@@ -308,6 +308,13 @@ export default function App() {
   const [webAppUrl, setWebAppUrl] = useLocalStorage('webAppUrl', '');
   const [lastSync, setLastSync] = useLocalStorage('lastSync', '');
   const [userRole, setUserRole] = useLocalStorage('userRole', null);
+  
+  // Log pgData on first load
+  console.log('📊 pgData initialized with keys:', Object.keys(pgData));
+  Object.keys(pgData).forEach(pg => {
+    console.log(`  ${pg}: ${Array.isArray(pgData[pg]) ? pgData[pg].length : 'NOT ARRAY'} tenants`);
+  });
+  
   const [selectedPG, setSelectedPG] = useState(Object.keys(pgData)[0]);
   const [selectedMonth, setSelectedMonth] = useState(MONTHS[new Date().getMonth()]);
   const [view, setView] = useState('dashboard');

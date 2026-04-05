@@ -120,6 +120,15 @@ export async function pushToSheets(webAppUrl, pgData) {
   console.log('  Body length:', body.length, 'chars');
   console.log('  Verifying structure - keys in body:', Object.keys(JSON.parse(body)));
   
+  // CRITICAL: Show what each PG in the body looks like
+  const parsed = JSON.parse(body);
+  Object.keys(parsed).forEach(key => {
+    if (key !== 'action') {
+      const val = parsed[key];
+      console.log(`  📦 Body.${key}: ${Array.isArray(val) ? val.length + ' items' : typeof val}`);
+    }
+  });
+  
   return sheetFetch(webAppUrl, 'write', sanitized);
 }
 
