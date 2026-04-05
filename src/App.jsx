@@ -322,7 +322,7 @@ function TenantPaymentModal({ tenant, selectedPG, pgColor, onClose, onSave }) {
 // ── Collection Tab ────────────────────────────────────────────
 function CollectionTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
   const pgStats = Object.entries(pgData).map(([pgName, tenants]) => {
-    const amt = tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
+    const amt = (tenants || []).filter(t => t && t.name).reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
     return { pgName, amt, color: PG_COLORS[pgName] || '#6366f1', active: tenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date()), tenants };
   }).sort((a, b) => b.amt - a.amt);
   const totalThisMonth = pgStats.reduce((s, x) => s + x.amt, 0);
@@ -335,7 +335,7 @@ function CollectionTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
       collectorMonth[md.collector] += parseFloat(md.amount) || 0;
     }
   });
-  const monthlyTotals = MONTHS.map(m => ({ m, total: Object.values(pgData).flat().reduce((s, t) => s + (parseFloat(t.monthly?.[m]?.amount) || 0), 0) }));
+  const monthlyTotals = MONTHS.map(m => ({ m, total: Object.values(pgData).flat().filter(t => t && t.name).reduce((s, t) => s + (parseFloat(t.monthly?.[m]?.amount) || 0), 0) }));
   const maxBar = Math.max(...monthlyTotals.map(x => x.total), 1);
   return (
     <div style={{ padding: '0 14px 88px', maxWidth: 700, margin: '0 auto' }}>
@@ -407,7 +407,7 @@ function CollectionTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
 
 // ── FIX 5: Analytics Tab ──────────────────────────────────────
 function AnalyticsTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
-  const allTenants = Object.values(pgData).flat();
+  const allTenants = Object.values(pgData).flat().filter(t => t && t.name);
   const active = allTenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
 
   // Payment status counts
@@ -636,9 +636,10 @@ export default function App() {
           Object.keys(res.data).forEach(pg => {
             if (isValidPG(pg) && res.data[pg]?.length > 0) {
               // Ensure every tenant has an ID (migration for old data)
-              merged[pg] = res.data[pg].map(t =>
-                t.id ? t : { ...t, id: generateTenantId(t.dateJoining) }
-              );
+              // Filter null/empty rows and ensure every tenant has an ID
+          merged[pg] = res.data[pg]
+            .filter(t => t && t.name && String(t.name).trim() !== '')
+            .map(t => t.id ? t : { ...t, id: generateTenantId(t.dateJoining) });
             }
           });
           setPgData(merged);
@@ -716,13 +717,15 @@ export default function App() {
     else { setSyncStatus('error'); showToast('❌ ' + res.error, 'error'); setTimeout(() => setSyncStatus('idle'), 5000); }
   };
 
-  const tenants = pgData[selectedPG] || [];
-  const allTenants = Object.values(pgData).flat();
+  const tenants = (pgData[selectedPG] || []).filter(t => t && t.name);
+  const allTenants = Object.values(pgData).flat().filter(t => t && t.name);
 
   // FIX 1+6: Sort by joining date (pure date, day-level) — ascending (oldest first for active, left tenants at bottom)
   // FIX 1: Sort by DAY NUMBER only (1→31), month/year ignored
   // e.g. 01-Jan, 03-Mar, 15-Aug, 28-Dec — only the day matters
-  const sortedTenants = [...tenants].sort((a, b) => {
+  // Guard: filter out any null/undefined/empty tenant objects
+  const validTenants = tenants.filter(t => t && t.name);
+  const sortedTenants = [...validTenants].sort((a, b) => {
     const aLeft = a.dateLeaving && new Date(a.dateLeaving) < new Date();
     const bLeft = b.dateLeaving && new Date(b.dateLeaving) < new Date();
     if (aLeft && !bLeft) return 1;   // left always goes to bottom
@@ -734,7 +737,8 @@ export default function App() {
   });
 
   const filteredTenants = sortedTenants.filter(t =>
-    t.name.toLowerCase().includes(search.toLowerCase()) || (t.contact || '').includes(search)
+    t && t.name &&
+    (t.name.toLowerCase().includes(search.toLowerCase()) || (t.contact || '').includes(search))
   );
 
   const active = tenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());

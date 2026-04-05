@@ -98,7 +98,8 @@ function readAllData() {
 
     for (let r = 1; r < data.length; r++) {
       const row = data[r];
-      if (!row[0]) continue;
+      // Skip empty rows or rows where name is blank/undefined
+      if (!row[0] || String(row[0]).trim() === '') continue;
 
       const formatDate = function(val) {
         if (!val) return "";

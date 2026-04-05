@@ -133,7 +133,9 @@ function readAllData() {
     var tenants = [];
     for (var r = 1; r < data.length; r++) {
       var row = data[r];
-      if (!row[hasIdCol ? 1 : 0]) continue; // skip empty name rows
+      // Skip empty/undefined rows
+      var nameVal = row[hasIdCol ? 1 : 0];
+      if (!nameVal || String(nameVal).trim() === '') continue;
 
       var offset = hasIdCol ? 1 : 0; // col offset for name/contact etc.
 
