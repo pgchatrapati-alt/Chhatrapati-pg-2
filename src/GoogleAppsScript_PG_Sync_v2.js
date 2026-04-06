@@ -1,21 +1,10 @@
-// ============================================================
 // PG TENANT MANAGER — Google Apps Script Web App
-// v6 — Smart row placement: active above separator, left below
-// ============================================================
+// Simple safe write: header untouched, data rewritten cleanly
 
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin":  "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Content-Type": "application/json"
-  };
-}
 function makeResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
-
 function doGet(e)  { return handleRequest(e); }
 function doPost(e) { return handleRequest(e); }
 
@@ -23,21 +12,17 @@ function handleRequest(e) {
   try {
     var action, data;
     if (e.postData && e.postData.contents) {
-      var body = JSON.parse(e.postData.contents);
-      action = body.action; data = body.data;
+      var b = JSON.parse(e.postData.contents);
+      action = b.action; data = b.data;
     } else {
       action = e.parameter.action;
       data = e.parameter.data ? JSON.parse(e.parameter.data) : null;
     }
-    var result;
-    if      (action === "ping")  result = { success: true, message: "PG Sync connected! ✅" };
-    else if (action === "read")  result = readAllData();
-    else if (action === "write") {
-      if (!data) throw new Error("No data provided");
-      result = writeData(data);
-    } else result = { success: false, error: "Unknown action: " + action };
-    return makeResponse(result);
-  } catch (err) {
+    if (action === "ping")        return makeResponse({ success: true, message: "Connected ✅" });
+    if (action === "read")        return makeResponse(readAllData());
+    if (action === "write" && data) return makeResponse(writeData(data));
+    return makeResponse({ success: false, error: "Unknown action" });
+  } catch(err) {
     return makeResponse({ success: false, error: err.message });
   }
 }
@@ -45,245 +30,172 @@ function handleRequest(e) {
 // ── READ ──────────────────────────────────────────────────────
 function readAllData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var allData = {};
   var MONTHS = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"];
+  var allData = {};
 
   ss.getSheets().forEach(function(sheet) {
     var name = sheet.getName();
     if (name.startsWith("_")) return;
-
-    var data = sheet.getDataRange().getValues();
-    if (data.length < 2) { allData[name] = []; return; }
+    var rows = sheet.getDataRange().getValues();
+    if (rows.length < 2) { allData[name] = []; return; }
 
     var tenants = [];
-    for (var r = 1; r < data.length; r++) {
-      var row = data[r];
-      if (!row[0] || String(row[0]).trim() === '') continue; // skip blank/separator rows
-
-      var formatDate = function(val) {
-        if (!val) return "";
-        try { return Utilities.formatDate(new Date(val), Session.getScriptTimeZone(), "yyyy-MM-dd"); }
-        catch(e2) { return String(val); }
+    for (var r = 1; r < rows.length; r++) {
+      var row = rows[r];
+      if (!row[0] || String(row[0]).trim() === '') continue; // skip blank rows
+      var fmtDate = function(v) {
+        if (!v) return "";
+        try { return Utilities.formatDate(new Date(v), Session.getScriptTimeZone(), "yyyy-MM-dd"); }
+        catch(e) { return String(v); }
       };
-
-      var tenant = {
-        name:        String(row[0] || ""),
-        contact:     String(row[1] || ""),
-        deposit:     String(row[2] || ""),
-        rent:        String(row[3] || ""),
-        dateJoining: formatDate(row[4]),
-        dateLeaving: formatDate(row[5]),
-        note:        String(row[6] || ""),
-        monthly:     {}
+      var t = {
+        name: String(row[0]||""), contact: String(row[1]||""),
+        deposit: String(row[2]||""), rent: String(row[3]||""),
+        dateJoining: fmtDate(row[4]), dateLeaving: fmtDate(row[5]),
+        note: String(row[6]||""), monthly: {}
       };
-
-      MONTHS.forEach(function(month, i) {
-        var base = 7 + (i * 4);
-        tenant.monthly[month] = {
-          amount:    String(row[base]     || ""),
-          halfFull:  String(row[base + 1] || ""),
-          collector: String(row[base + 2] || ""),
-          note:      String(row[base + 3] || "")
+      MONTHS.forEach(function(m, i) {
+        var b = 7 + i*4;
+        t.monthly[m] = {
+          amount: String(row[b]||""), halfFull: String(row[b+1]||""),
+          collector: String(row[b+2]||""), note: String(row[b+3]||"")
         };
       });
-      tenants.push(tenant);
+      tenants.push(t);
     }
     allData[name] = tenants;
   });
   return { success: true, data: allData };
 }
 
-// ── WRITE — Smart placement: active above separator, left below ─
-//
-// Sheet structure:
-//   Row 1     : Header
-//   Row 2..N  : Active tenants (sorted by day)
-//   Row N+1   : BLANK separator row  ← always maintained
-//   Row N+2.. : Left tenants (sorted by day)
-//
-// New active tenant → inserted ABOVE separator
-// New left tenant   → appended BELOW separator
-// Existing tenant   → updated in-place (same row, no movement)
+// ── WRITE ─────────────────────────────────────────────────────
+// Strategy (simple & safe):
+//   1. Keep header row (row 1) always safe — never touch it
+//   2. Active tenants sorted by joining day → written from row 2 onward
+//   3. One blank separator row after active tenants
+//   4. Left tenants after separator
+//   5. Clear only DATA rows (row 2 onward), not header
+//   6. New tenant = just part of sorted list, naturally goes to right position
 //
 function writeData(pgData) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var MONTHS = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"];
-
-  var headers = ["Name","Contact","Deposit","Rent",
-                 "Date Joining","Date Leaving","Note"];
-  MONTHS.forEach(function(m) {
-    headers.push(m+" Amount", m+" Half/Full", m+" Collector", m+" Note");
-  });
-  var NCOLS = headers.length; // 55
-
-  var totalUpdated = 0, totalAdded = 0;
+  var headers = ["Name","Contact","Deposit","Rent","Date Joining","Date Leaving","Note"];
+  MONTHS.forEach(function(m) { headers.push(m+" Amount",m+" Half/Full",m+" Collector",m+" Note"); });
+  var NCOLS = headers.length;
 
   Object.keys(pgData).forEach(function(pgName) {
     try {
       var sheet = ss.getSheetByName(pgName);
       if (!sheet) sheet = ss.insertSheet(pgName);
 
+      // Expand columns if needed
       if (sheet.getMaxColumns() < NCOLS)
         sheet.insertColumnsAfter(sheet.getMaxColumns(), NCOLS - sheet.getMaxColumns());
 
-      // Ensure header
-      var firstCell = sheet.getLastRow() > 0
-        ? String(sheet.getRange(1,1).getValue()).trim() : "";
-      if (firstCell !== "Name") {
-        sheet.getRange(1, 1, 1, NCOLS).setValues([headers]);
+      // ── Step 1: Write/ensure header ───────────────────────
+      var hdr = sheet.getLastRow() > 0 ? String(sheet.getRange(1,1).getValue()).trim() : "";
+      if (hdr !== "Name") {
+        if (sheet.getLastRow() === 0) sheet.appendRow(headers);
+        else sheet.getRange(1,1,1,NCOLS).setValues([headers]);
         styleHeader(sheet, NCOLS);
       }
 
-      // ── Read sheet: build maps & find separator row ──────
+      // ── Step 2: Read existing sheet data for merge ────────
+      // We need existing monthly data so we don't lose it on update
+      // Build name → existing full row map
+      var existingMap = {};
       var lastRow = sheet.getLastRow();
-
-      // nameMap: tenant name (lowercase) → row number
-      var nameMap   = {};
-      var sepRow    = 0; // row number of blank separator (0 = not found yet)
-
       if (lastRow >= 2) {
-        var allVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        for (var i = 0; i < allVals.length; i++) {
-          var cellVal = String(allVals[i][0] || "").trim();
-          var rowNum  = i + 2;
-          if (cellVal === '') {
-            // First blank row = separator
-            if (sepRow === 0) sepRow = rowNum;
-          } else {
-            nameMap[cellVal.toLowerCase()] = rowNum;
-          }
-        }
-      }
-
-      // ── Separate incoming into active vs left ─────────────
-      var tenants = pgData[pgName] || [];
-      var active = tenants.filter(function(t) {
-        return t && t.name && (!t.dateLeaving || t.dateLeaving === "");
-      });
-      var left = tenants.filter(function(t) {
-        return t && t.name && t.dateLeaving && t.dateLeaving !== "";
-      });
-
-      // Sort both by day-of-month (1→31)
-      function sortByDay(arr) {
-        arr.sort(function(a, b) {
-          var dA = a.dateJoining ? new Date(a.dateJoining).getDate() : 32;
-          var dB = b.dateJoining ? new Date(b.dateJoining).getDate() : 32;
-          return dA - dB;
+        var existing = sheet.getRange(2, 1, lastRow-1, NCOLS).getValues();
+        existing.forEach(function(row) {
+          var n = String(row[0]||"").trim().toLowerCase();
+          if (n) existingMap[n] = row;
         });
       }
-      sortByDay(active);
-      sortByDay(left);
 
-      // ── Process active tenants ────────────────────────────
+      // ── Step 3: Separate active vs left ───────────────────
+      var tenants = (pgData[pgName] || []).filter(function(t) { return t && t.name; });
+      var active = tenants.filter(function(t) { return !t.dateLeaving || t.dateLeaving === ""; });
+      var left   = tenants.filter(function(t) { return t.dateLeaving && t.dateLeaving !== ""; });
+
+      // Sort by day-of-month (1→31)
+      function byDay(a, b) {
+        return (a.dateJoining ? new Date(a.dateJoining).getDate() : 32) -
+               (b.dateJoining ? new Date(b.dateJoining).getDate() : 32);
+      }
+      active.sort(byDay);
+      left.sort(byDay);
+
+      // ── Step 4: Build all data rows ────────────────────────
+      var dataRows = [];
       active.forEach(function(t) {
-        var key = String(t.name).trim().toLowerCase();
-        if (nameMap[key]) {
-          // UPDATE in place
-          var existing = sheet.getRange(nameMap[key], 1, 1, NCOLS).getValues()[0];
-          sheet.getRange(nameMap[key], 1, 1, NCOLS)
-               .setValues([buildRow(t, existing, MONTHS, false)]);
-          totalUpdated++;
-        } else {
-          // NEW active tenant → insert ABOVE separator row
-          // so it stays in the active section
-          if (sepRow > 0) {
-            // Insert a new row just before separator
-            sheet.insertRowBefore(sepRow);
-            // sepRow and all subsequent rows shift down by 1
-            // Write to the newly inserted row (which is now at sepRow)
-            sheet.getRange(sepRow, 1, 1, NCOLS)
-                 .setValues([buildRow(t, new Array(NCOLS).fill(""), MONTHS, false)]);
-            // Update nameMap and shift sepRow
-            nameMap[key] = sepRow;
-            sepRow++;  // separator moved down
-          } else {
-            // No separator yet → just append (first-time setup)
-            sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), MONTHS, false));
-            nameMap[key] = sheet.getLastRow();
-          }
-          totalAdded++;
-        }
+        var ex = existingMap[String(t.name).trim().toLowerCase()] || new Array(NCOLS).fill("");
+        dataRows.push(buildRow(t, ex, MONTHS, false));
       });
 
-      // ── Ensure separator row exists after active section ──
-      if (sepRow === 0 && left.length > 0) {
-        // Insert separator after all active rows
-        sheet.appendRow(new Array(NCOLS).fill(""));
-        sepRow = sheet.getLastRow();
+      // Blank separator row (only if there are left tenants)
+      if (left.length > 0) {
+        dataRows.push(new Array(NCOLS).fill(""));
+        left.forEach(function(t) {
+          var ex = existingMap[String(t.name).trim().toLowerCase()] || new Array(NCOLS).fill("");
+          dataRows.push(buildRow(t, ex, MONTHS, true));
+        });
       }
 
-      // ── Process left tenants ──────────────────────────────
-      left.forEach(function(t) {
-        var key = String(t.name).trim().toLowerCase();
-        if (nameMap[key]) {
-          // UPDATE in place (already in left section)
-          var existing = sheet.getRange(nameMap[key], 1, 1, NCOLS).getValues()[0];
-          sheet.getRange(nameMap[key], 1, 1, NCOLS)
-               .setValues([buildRow(t, existing, MONTHS, true)]);
-          totalUpdated++;
-        } else {
-          // NEW left tenant → append at very end (below separator)
-          sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), MONTHS, true));
-          nameMap[key] = sheet.getLastRow();
-          totalAdded++;
-        }
-      });
+      // ── Step 5: Clear data rows & write fresh ─────────────
+      // Only clears rows 2 onward — header (row 1) is NEVER touched
+      if (dataRows.length > 0) {
+        var neededRows = dataRows.length;
+        // Expand sheet rows if needed
+        if (sheet.getMaxRows() < neededRows + 1)
+          sheet.insertRowsAfter(sheet.getMaxRows(), neededRows + 1 - sheet.getMaxRows());
+
+        // Clear old data rows
+        if (lastRow >= 2)
+          sheet.getRange(2, 1, lastRow - 1, NCOLS).clearContent();
+
+        // Write new data rows starting from row 2
+        sheet.getRange(2, 1, neededRows, NCOLS).setValues(dataRows);
+      }
 
       styleHeader(sheet, NCOLS);
-
-    } catch(pgErr) {
-      Logger.log("ERROR on " + pgName + ": " + pgErr.message);
+    } catch(e) {
+      Logger.log("ERROR " + pgName + ": " + e.message);
     }
   });
 
-  return {
-    success: true,
-    message: "Done ✅ — Updated: " + totalUpdated + ", Added: " + totalAdded
-  };
+  return { success: true, message: "Saved ✅" };
 }
 
-// ── buildRow: merge incoming + existing (blank → keep existing) ─
-function buildRow(t, existing, MONTHS, isLeft) {
-  function safe(incoming, existingVal) {
-    var v = String(incoming || "").trim();
-    return v !== "" ? v : String(existingVal || "");
+// ── Build row: merge incoming + existing (blank in → keep existing) ─
+function buildRow(t, ex, MONTHS, isLeft) {
+  function s(val, fallback) {
+    var v = String(val||"").trim();
+    return v !== "" ? v : String(fallback||"");
   }
-  var noteVal = String(t.note || "").trim();
-  if (isLeft && noteVal.indexOf("[LEFT]") === -1)
-    noteVal = noteVal ? noteVal + " [LEFT]" : "[LEFT]";
-  if (!noteVal) noteVal = String(existing[6] || "");
+  var note = String(t.note||"").trim();
+  if (isLeft && note.indexOf("[LEFT]") === -1) note = note ? note+" [LEFT]" : "[LEFT]";
+  if (!note) note = String(ex[6]||"");
 
-  var row = [
-    safe(t.name,        existing[0]),
-    safe(t.contact,     existing[1]),
-    safe(t.deposit,     existing[2]),
-    safe(t.rent,        existing[3]),
-    safe(t.dateJoining, existing[4]),
-    safe(t.dateLeaving, existing[5]),
-    noteVal
-  ];
+  var row = [s(t.name,ex[0]), s(t.contact,ex[1]), s(t.deposit,ex[2]),
+             s(t.rent,ex[3]), s(t.dateJoining,ex[4]), s(t.dateLeaving,ex[5]), note];
+
   MONTHS.forEach(function(m, i) {
-    var base = 7 + (i * 4);
-    var md   = (t.monthly && t.monthly[m]) ? t.monthly[m] : {};
-    row.push(
-      safe(md.amount,    existing[base    ]),
-      safe(md.halfFull,  existing[base + 1]),
-      safe(md.collector, existing[base + 2]),
-      safe(md.note,      existing[base + 3])
-    );
+    var b = 7 + i*4;
+    var md = (t.monthly && t.monthly[m]) || {};
+    row.push(s(md.amount,ex[b]), s(md.halfFull,ex[b+1]),
+             s(md.collector,ex[b+2]), s(md.note,ex[b+3]));
   });
   return row;
 }
 
 function styleHeader(sheet, ncols) {
   try {
-    sheet.getRange(1,1,1,ncols)
-      .setBackground("#1a1a2e")
-      .setFontColor("#ffffff")
-      .setFontWeight("bold");
+    sheet.getRange(1,1,1,ncols).setBackground("#1a1a2e")
+         .setFontColor("#ffffff").setFontWeight("bold");
     sheet.setFrozenRows(1);
   } catch(e) {}
 }
