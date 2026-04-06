@@ -1,14 +1,11 @@
 // ============================================================
 // PG TENANT MANAGER — Google Apps Script Web App
-// v5 — Name-Based Safe Write (no clearContents, no data loss)
-// ============================================================
-// Setup: Extensions > Apps Script > paste here > Deploy > Web App
-//   Execute as: Me | Access: Anyone
+// v6 — Smart row placement: active above separator, left below
 // ============================================================
 
 function corsHeaders() {
   return {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin":  "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Content-Type": "application/json"
@@ -30,8 +27,7 @@ function handleRequest(e) {
       action = body.action; data = body.data;
     } else {
       action = e.parameter.action;
-      var raw = e.parameter.data;
-      data = raw ? JSON.parse(raw) : null;
+      data = e.parameter.data ? JSON.parse(e.parameter.data) : null;
     }
     var result;
     if      (action === "ping")  result = { success: true, message: "PG Sync connected! ✅" };
@@ -63,29 +59,27 @@ function readAllData() {
     var tenants = [];
     for (var r = 1; r < data.length; r++) {
       var row = data[r];
-      if (!row[0] || String(row[0]).trim() === '') continue;
+      if (!row[0] || String(row[0]).trim() === '') continue; // skip blank/separator rows
 
       var formatDate = function(val) {
         if (!val) return "";
         try { return Utilities.formatDate(new Date(val), Session.getScriptTimeZone(), "yyyy-MM-dd"); }
-        catch(e) { return String(val); }
+        catch(e2) { return String(val); }
       };
 
       var tenant = {
         name:        String(row[0] || ""),
         contact:     String(row[1] || ""),
         deposit:     String(row[2] || ""),
-        depositPaid: String(row[3] || ""),
-        rent:        String(row[4] || ""),
-        dateJoining: formatDate(row[5]),
-        dateLeaving: formatDate(row[6]),
-        note:        String(row[7] || ""),
+        rent:        String(row[3] || ""),
+        dateJoining: formatDate(row[4]),
+        dateLeaving: formatDate(row[5]),
+        note:        String(row[6] || ""),
         monthly:     {}
       };
 
-      // Monthly: col 8 onward, 4 cols per month
       MONTHS.forEach(function(month, i) {
-        var base = 8 + (i * 4);
+        var base = 7 + (i * 4);
         tenant.monthly[month] = {
           amount:    String(row[base]     || ""),
           halfFull:  String(row[base + 1] || ""),
@@ -100,119 +94,145 @@ function readAllData() {
   return { success: true, data: allData };
 }
 
-// ── WRITE — Name-based safe write, NO clearContents ───────────
+// ── WRITE — Smart placement: active above separator, left below ─
 //
-// Logic:
-//   1. Read existing rows, build name→rowNumber map
-//   2. For each incoming tenant:
-//      - Found by name → smart update that row only
-//      - Not found     → append new row
-//   3. NEVER clearContents(), NEVER overwrite whole sheet
-//   4. Partial data: blank incoming value → keep existing value
+// Sheet structure:
+//   Row 1     : Header
+//   Row 2..N  : Active tenants (sorted by day)
+//   Row N+1   : BLANK separator row  ← always maintained
+//   Row N+2.. : Left tenants (sorted by day)
+//
+// New active tenant → inserted ABOVE separator
+// New left tenant   → appended BELOW separator
+// Existing tenant   → updated in-place (same row, no movement)
 //
 function writeData(pgData) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var MONTHS = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"];
 
-  // Header row (col layout matches readAllData above)
-  var headers = ["Name","Contact","Deposit","DepositPaid","Rent",
+  var headers = ["Name","Contact","Deposit","Rent",
                  "Date Joining","Date Leaving","Note"];
   MONTHS.forEach(function(m) {
     headers.push(m+" Amount", m+" Half/Full", m+" Collector", m+" Note");
   });
-  var TOTAL_COLS = headers.length; // 8 + 48 = 56
+  var NCOLS = headers.length; // 55
 
-  var pgNames = Object.keys(pgData);
   var totalUpdated = 0, totalAdded = 0;
 
-  pgNames.forEach(function(pgName) {
+  Object.keys(pgData).forEach(function(pgName) {
     try {
-      // Get or create sheet
       var sheet = ss.getSheetByName(pgName);
-      if (!sheet) {
-        sheet = ss.insertSheet(pgName);
-        Logger.log("Created sheet: " + pgName);
-      }
+      if (!sheet) sheet = ss.insertSheet(pgName);
 
-      // Ensure sheet has enough columns
-      if (sheet.getMaxColumns() < TOTAL_COLS) {
-        sheet.insertColumnsAfter(sheet.getMaxColumns(),
-          TOTAL_COLS - sheet.getMaxColumns());
-      }
+      if (sheet.getMaxColumns() < NCOLS)
+        sheet.insertColumnsAfter(sheet.getMaxColumns(), NCOLS - sheet.getMaxColumns());
 
-      // Write header if sheet is empty OR first cell is not "Name"
+      // Ensure header
       var firstCell = sheet.getLastRow() > 0
         ? String(sheet.getRange(1,1).getValue()).trim() : "";
       if (firstCell !== "Name") {
-        // Expand rows if needed
-        if (sheet.getMaxRows() < 1) sheet.insertRowAfter(1);
-        sheet.getRange(1, 1, 1, TOTAL_COLS).setValues([headers]);
-        // Style header
-        try {
-          var hr = sheet.getRange(1, 1, 1, TOTAL_COLS);
-          hr.setBackground("#1a1a2e");
-          hr.setFontColor("#ffffff");
-          hr.setFontWeight("bold");
-          sheet.setFrozenRows(1);
-        } catch(e) {}
+        sheet.getRange(1, 1, 1, NCOLS).setValues([headers]);
+        styleHeader(sheet, NCOLS);
       }
 
-      // Build name → rowNumber map from existing sheet data
-      // nameMap["ravi kumar"] = 5  (1-based row number)
-      var nameMap = {};
+      // ── Read sheet: build maps & find separator row ──────
       var lastRow = sheet.getLastRow();
+
+      // nameMap: tenant name (lowercase) → row number
+      var nameMap   = {};
+      var sepRow    = 0; // row number of blank separator (0 = not found yet)
+
       if (lastRow >= 2) {
-        var nameCol = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        for (var i = 0; i < nameCol.length; i++) {
-          var n = String(nameCol[i][0] || "").trim().toLowerCase();
-          if (n) nameMap[n] = i + 2; // row index (1-based, header=1)
+        var allVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < allVals.length; i++) {
+          var cellVal = String(allVals[i][0] || "").trim();
+          var rowNum  = i + 2;
+          if (cellVal === '') {
+            // First blank row = separator
+            if (sepRow === 0) sepRow = rowNum;
+          } else {
+            nameMap[cellVal.toLowerCase()] = rowNum;
+          }
         }
       }
 
+      // ── Separate incoming into active vs left ─────────────
       var tenants = pgData[pgName] || [];
-
-      // Sort: day-of-month ascending, left tenants at bottom
-      tenants.sort(function(a, b) {
-        var aLeft = a.dateLeaving && a.dateLeaving !== "";
-        var bLeft = b.dateLeaving && b.dateLeaving !== "";
-        if (aLeft && !bLeft) return 1;
-        if (!aLeft && bLeft) return -1;
-        var dA = a.dateJoining ? new Date(a.dateJoining).getDate() : 32;
-        var dB = b.dateJoining ? new Date(b.dateJoining).getDate() : 32;
-        return dA - dB;
+      var active = tenants.filter(function(t) {
+        return t && t.name && (!t.dateLeaving || t.dateLeaving === "");
+      });
+      var left = tenants.filter(function(t) {
+        return t && t.name && t.dateLeaving && t.dateLeaving !== "";
       });
 
-      tenants.forEach(function(t) {
-        if (!t || !t.name || String(t.name).trim() === '') return;
+      // Sort both by day-of-month (1→31)
+      function sortByDay(arr) {
+        arr.sort(function(a, b) {
+          var dA = a.dateJoining ? new Date(a.dateJoining).getDate() : 32;
+          var dB = b.dateJoining ? new Date(b.dateJoining).getDate() : 32;
+          return dA - dB;
+        });
+      }
+      sortByDay(active);
+      sortByDay(left);
 
-        var incomingName = String(t.name).trim().toLowerCase();
-        var targetRow = nameMap[incomingName] || null;
-
-        if (targetRow) {
-          // UPDATE existing row — smart merge (blank incoming → keep existing)
-          var existing = sheet.getRange(targetRow, 1, 1, TOTAL_COLS).getValues()[0];
-          var updated  = buildRow(t, existing, MONTHS);
-          sheet.getRange(targetRow, 1, 1, TOTAL_COLS).setValues([updated]);
+      // ── Process active tenants ────────────────────────────
+      active.forEach(function(t) {
+        var key = String(t.name).trim().toLowerCase();
+        if (nameMap[key]) {
+          // UPDATE in place
+          var existing = sheet.getRange(nameMap[key], 1, 1, NCOLS).getValues()[0];
+          sheet.getRange(nameMap[key], 1, 1, NCOLS)
+               .setValues([buildRow(t, existing, MONTHS, false)]);
           totalUpdated++;
         } else {
-          // APPEND new row
-          var emptyExisting = new Array(TOTAL_COLS).fill("");
-          var newRow = buildRow(t, emptyExisting, MONTHS);
-          sheet.appendRow(newRow);
-          // Register in map to avoid duplicates within same batch
-          var newIdx = sheet.getLastRow();
-          nameMap[incomingName] = newIdx;
+          // NEW active tenant → insert ABOVE separator row
+          // so it stays in the active section
+          if (sepRow > 0) {
+            // Insert a new row just before separator
+            sheet.insertRowBefore(sepRow);
+            // sepRow and all subsequent rows shift down by 1
+            // Write to the newly inserted row (which is now at sepRow)
+            sheet.getRange(sepRow, 1, 1, NCOLS)
+                 .setValues([buildRow(t, new Array(NCOLS).fill(""), MONTHS, false)]);
+            // Update nameMap and shift sepRow
+            nameMap[key] = sepRow;
+            sepRow++;  // separator moved down
+          } else {
+            // No separator yet → just append (first-time setup)
+            sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), MONTHS, false));
+            nameMap[key] = sheet.getLastRow();
+          }
           totalAdded++;
         }
       });
 
-      // Re-style header after writes (safe)
-      try {
-        sheet.getRange(1,1,1,TOTAL_COLS).setBackground("#1a1a2e")
-             .setFontColor("#ffffff").setFontWeight("bold");
-        sheet.setFrozenRows(1);
-      } catch(e) {}
+      // ── Ensure separator row exists after active section ──
+      if (sepRow === 0 && left.length > 0) {
+        // Insert separator after all active rows
+        sheet.appendRow(new Array(NCOLS).fill(""));
+        sepRow = sheet.getLastRow();
+      }
+
+      // ── Process left tenants ──────────────────────────────
+      left.forEach(function(t) {
+        var key = String(t.name).trim().toLowerCase();
+        if (nameMap[key]) {
+          // UPDATE in place (already in left section)
+          var existing = sheet.getRange(nameMap[key], 1, 1, NCOLS).getValues()[0];
+          sheet.getRange(nameMap[key], 1, 1, NCOLS)
+               .setValues([buildRow(t, existing, MONTHS, true)]);
+          totalUpdated++;
+        } else {
+          // NEW left tenant → append at very end (below separator)
+          sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), MONTHS, true));
+          nameMap[key] = sheet.getLastRow();
+          totalAdded++;
+        }
+      });
+
+      styleHeader(sheet, NCOLS);
 
     } catch(pgErr) {
       Logger.log("ERROR on " + pgName + ": " + pgErr.message);
@@ -225,35 +245,28 @@ function writeData(pgData) {
   };
 }
 
-// ── Helper: build one row array, merging incoming + existing ──
-// Rule: if incoming value is blank → use existing (PRESERVE)
-function buildRow(t, existing, MONTHS) {
+// ── buildRow: merge incoming + existing (blank → keep existing) ─
+function buildRow(t, existing, MONTHS, isLeft) {
   function safe(incoming, existingVal) {
     var v = String(incoming || "").trim();
     return v !== "" ? v : String(existingVal || "");
   }
-
-  var isLeft  = t.dateLeaving && String(t.dateLeaving).trim() !== "";
   var noteVal = String(t.note || "").trim();
-  if (isLeft && noteVal.indexOf("[LEFT]") === -1) {
+  if (isLeft && noteVal.indexOf("[LEFT]") === -1)
     noteVal = noteVal ? noteVal + " [LEFT]" : "[LEFT]";
-  }
-  if (!noteVal) noteVal = String(existing[7] || "");
+  if (!noteVal) noteVal = String(existing[6] || "");
 
   var row = [
     safe(t.name,        existing[0]),
     safe(t.contact,     existing[1]),
     safe(t.deposit,     existing[2]),
-    safe(t.depositPaid, existing[3]),
-    safe(t.rent,        existing[4]),
-    safe(t.dateJoining, existing[5]),
-    safe(t.dateLeaving, existing[6]),
+    safe(t.rent,        existing[3]),
+    safe(t.dateJoining, existing[4]),
+    safe(t.dateLeaving, existing[5]),
     noteVal
   ];
-
-  // Monthly columns (4 per month)
   MONTHS.forEach(function(m, i) {
-    var base = 8 + (i * 4);
+    var base = 7 + (i * 4);
     var md   = (t.monthly && t.monthly[m]) ? t.monthly[m] : {};
     row.push(
       safe(md.amount,    existing[base    ]),
@@ -262,6 +275,15 @@ function buildRow(t, existing, MONTHS) {
       safe(md.note,      existing[base + 3])
     );
   });
-
   return row;
+}
+
+function styleHeader(sheet, ncols) {
+  try {
+    sheet.getRange(1,1,1,ncols)
+      .setBackground("#1a1a2e")
+      .setFontColor("#ffffff")
+      .setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  } catch(e) {}
 }
