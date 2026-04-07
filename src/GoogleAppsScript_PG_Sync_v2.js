@@ -32,6 +32,7 @@ function readAllData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var MONTHS = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"];
+  var DATA_START = 6; // rows 1-6 are fixed — data starts at row 7
   var allData = {};
   ss.getSheets().forEach(function(sheet) {
     var name = sheet.getName();
@@ -39,7 +40,8 @@ function readAllData() {
     var rows = sheet.getDataRange().getValues();
     if (rows.length < 2) { allData[name] = []; return; }
     var tenants = [];
-    for (var r = 1; r < rows.length; r++) {
+    var startIdx = DATA_START - 1; // 0-indexed
+    for (var r = startIdx; r < rows.length; r++) {
       var row = rows[r];
       if (!row[0] || String(row[0]).trim() === '') continue;
       var fmtDate = function(v) {
@@ -85,6 +87,7 @@ function writeData(pgData) {
     headers.push(m+" Amount", m+" Half/Full", m+" Collector", m+" Note");
   });
   var NCOLS = headers.length; // 55
+  var DATA_START = 6; // rows 1-6 fixed, data from row 7
 
   Object.keys(pgData).forEach(function(pgName) {
     try {
@@ -99,23 +102,20 @@ function writeData(pgData) {
       if (sheet.getMaxColumns() < NCOLS)
         sheet.insertColumnsAfter(sheet.getMaxColumns(), NCOLS - sheet.getMaxColumns());
 
-      // Write header if missing
-      var firstVal = sheet.getLastRow() > 0
-        ? String(sheet.getRange(1,1).getValue()).trim() : "";
-      if (firstVal !== "Name") {
-        if (sheet.getLastRow() === 0) sheet.appendRow(headers);
-        else sheet.getRange(1,1,1,NCOLS).setValues([headers]);
-        styleHeader(sheet, NCOLS);
-      }
+      // Rows 1-6 are fixed by user — we never touch them
+      // Just ensure sheet has enough rows for data starting at row 7
+      if (sheet.getMaxRows() < DATA_START)
+        sheet.insertRowsAfter(sheet.getMaxRows(), DATA_START - sheet.getMaxRows());
 
       // Build name → rowNumber map from existing sheet
       var nameMap = {};
       var lastRow = sheet.getLastRow();
-      if (lastRow >= 2) {
-        var nameCol = sheet.getRange(2, 1, lastRow-1, 1).getValues();
+      if (lastRow >= DATA_START) {
+        var numDataRows = lastRow - DATA_START + 1;
+        var nameCol = sheet.getRange(DATA_START, 1, numDataRows, 1).getValues();
         for (var i = 0; i < nameCol.length; i++) {
           var n = String(nameCol[i][0]||"").trim().toLowerCase();
-          if (n) nameMap[n] = i + 2; // 1-based row number
+          if (n) nameMap[n] = DATA_START + i; // 1-based row number
         }
       }
 
@@ -133,19 +133,16 @@ function writeData(pgData) {
         } else {
           // ── NEW tenant: insert at row 2 (top of data, below header) ─
           // This pushes existing rows down — no data lost
-          sheet.insertRowAfter(1);
+          sheet.insertRowAfter(DATA_START - 1);
           var emptyEx = new Array(NCOLS).fill("");
-          sheet.getRange(2, 1, 1, NCOLS).setValues([buildRow(t, emptyEx, MONTHS, isLeft)]);
-          // Register so duplicates within same batch are caught
-          nameMap[key] = 2;
-          // Shift all existing row numbers down by 1
+          sheet.getRange(DATA_START, 1, 1, NCOLS).setValues([buildRow(t, emptyEx, MONTHS, isLeft)]);
+          nameMap[key] = DATA_START;
           Object.keys(nameMap).forEach(function(k) {
             if (k !== key) nameMap[k]++;
           });
         }
       });
 
-      styleHeader(sheet, NCOLS);
     } catch(e) {
       Logger.log("ERROR " + pgName + ": " + e.message);
     }
