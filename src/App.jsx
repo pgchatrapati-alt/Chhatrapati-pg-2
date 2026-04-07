@@ -52,9 +52,9 @@ function isValidPG(name) {
 // Agar tenant ka joining date uss month ke baad hai → wo pending nahi hai
 // Example: joined 01 Apr 2026 → Jan 2026 mein pending nahi dikhna chahiye
 function tenantActiveInMonth(tenant, monthName) {
-  if (!tenant.dateJoining) return true; // no joining date = always active
+  if (!tenant.dateJoining) return true;
   const joinDate = new Date(tenant.dateJoining);
-  const joinYear = joinDate.getFullYear();
+  const joinYear  = joinDate.getFullYear();
   const joinMonth = joinDate.getMonth(); // 0-indexed
 
   const MONTHS_IDX = {
@@ -64,14 +64,16 @@ function tenantActiveInMonth(tenant, monthName) {
   const selIdx = MONTHS_IDX[monthName];
   if (selIdx === undefined) return true;
 
-  // Assume current year for selected month
-  // If joining is AFTER the selected month of same year → not active
-  const now = new Date();
-  const selYear = now.getFullYear(); // current display year
+  const now     = new Date();
+  const selYear = now.getFullYear();
 
-  // Tenant joined after the selected month-year → not active yet
-  if (joinYear > selYear) return false;
+  // Only block if tenant joins IN THE FUTURE relative to selected month+year
+  // Past years: always active
+  if (joinYear < selYear) return true;
+  // Same year: block if joined after selected month
   if (joinYear === selYear && joinMonth > selIdx) return false;
+  // Future year joiners: never show as pending
+  if (joinYear > selYear) return false;
   return true;
 }
 const FS = 15; // base font size +1
@@ -309,102 +311,66 @@ function TenantPaymentModal({ tenant, selectedPG, pgColor, onClose, onSave }) {
   );
 }
 
-// ── Collection Tab — Premium UI ─────────────────────────────
+// ── Collection Tab ────────────────────────────────────────────
 function CollectionTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
-  const safeFlat = () => Object.values(pgData).flat().filter(t => t && t.name);
-
-  const pgStats = Object.entries(pgData)
-    .filter(([pg]) => pg && (pgData[pg]||[]).length > 0)
-    .map(([pgName, tenants]) => {
-      const ts = (tenants||[]).filter(t=>t&&t.name);
-      const active = ts.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
-      const amt = ts.reduce((s,t) => s+(parseFloat(t.monthly?.[selectedMonth]?.amount)||0),0);
-      const expected = active.reduce((s,t) => s+(parseFloat(t.rent)||0),0);
-      const breakdown = {};
-      ts.forEach(t => {
-        const md = t.monthly?.[selectedMonth];
-        if (md?.collector && md?.amount) {
-          breakdown[md.collector] = (breakdown[md.collector]||0) + (parseFloat(md.amount)||0);
-        }
-      });
-      return { pgName, amt, expected, active: active.length, color: PG_COLORS[pgName]||'#6366f1', breakdown };
-    }).sort((a,b)=>b.amt-a.amt);
-
-  const totalCollected = pgStats.reduce((s,x)=>s+x.amt,0);
-  const totalExpected  = pgStats.reduce((s,x)=>s+x.expected,0);
-  const collPct = totalExpected > 0 ? Math.min(100,Math.round((totalCollected/totalExpected)*100)) : 0;
-
-  // Collector totals this month
+  const pgStats = Object.entries(pgData).map(([pgName, tenants]) => {
+    const amt = (tenants || []).filter(t => t && t.name).reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
+    return { pgName, amt, color: PG_COLORS[pgName] || '#6366f1', active: tenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date()), tenants };
+  }).sort((a, b) => b.amt - a.amt);
+  const totalThisMonth = pgStats.reduce((s, x) => s + x.amt, 0);
   const collectorMonth = {};
   COLLECTORS.forEach(c => { collectorMonth[c] = 0; });
-  safeFlat().forEach(t => {
+  Object.values(pgData).flat().forEach(t => {
     const md = t.monthly?.[selectedMonth];
-    if (md?.collector && md?.amount) collectorMonth[md.collector] = (collectorMonth[md.collector]||0) + (parseFloat(md.amount)||0);
+    if (md?.collector && md?.amount) {
+      if (!collectorMonth[md.collector]) collectorMonth[md.collector] = 0;
+      collectorMonth[md.collector] += parseFloat(md.amount) || 0;
+    }
   });
-
-  // Monthly trend all PGs
-  const monthlyTotals = MONTHS.map(m => ({
-    m,
-    col: safeFlat().reduce((s,t) => s+(parseFloat(t.monthly?.[m]?.amount)||0),0),
-    exp: Object.values(pgData).flat().filter(t=>t&&t.name&&(!t.dateLeaving||new Date(t.dateLeaving)>=new Date())).reduce((s,t)=>s+(parseFloat(t.rent)||0),0)
-  }));
-  const maxBar = Math.max(...monthlyTotals.map(x=>x.col),1);
-
+  const monthlyTotals = MONTHS.map(m => ({ m, total: Object.values(pgData).flat().filter(t => t && t.name).reduce((s, t) => s + (parseFloat(t.monthly?.[m]?.amount) || 0), 0) }));
+  const maxBar = Math.max(...monthlyTotals.map(x => x.total), 1);
   return (
-    <div style={{ padding:'0 14px 88px', maxWidth:700, margin:'0 auto' }}>
+    <div style={{ padding: '0 14px 88px', maxWidth: 700, margin: '0 auto' }}>
       <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
-
-      {/* Hero banner */}
-      <div style={{ background:`linear-gradient(135deg,${pgColor}22,#0f1629)`, borderRadius:16, padding:'16px 18px', border:`1px solid ${pgColor}44`, margin:'12px 0' }}>
-        <div style={{ fontSize:11, color:'#64748b', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Total Collection — {selectedMonth}</div>
-        <div style={{ fontSize:30, fontWeight:900, color:pgColor, marginBottom:8 }}>₹{fmtNum(totalCollected)}</div>
-        <div style={{ background:'#0a0f1e', borderRadius:6, height:7, marginBottom:4 }}>
-          <div style={{ height:'100%', background:`linear-gradient(90deg,${pgColor},${pgColor}99)`, borderRadius:6, width:`${collPct}%`, transition:'width .5s' }} />
-        </div>
-        <div style={{ display:'flex', justifyContent:'space-between' }}>
-          <span style={{ fontSize:11, color:pgColor, fontWeight:700 }}>{collPct}% collected</span>
-          <span style={{ fontSize:11, color:'#64748b' }}>Expected ₹{fmtNum(totalExpected)}</span>
-        </div>
-        {/* Collector pills */}
-        <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
-          {Object.entries(collectorMonth).filter(([,v])=>v>0).map(([c,v])=>(
-            <div key={c} style={{ background:'#0a0f1e', borderRadius:20, padding:'5px 14px', border:`1px solid ${COLLECTOR_COLORS[c]||'#334155'}55`, display:'flex', alignItems:'center', gap:7 }}>
-              <div style={{ width:8, height:8, borderRadius:'50%', background:COLLECTOR_COLORS[c]||'#94a3b8' }} />
-              <span style={{ fontSize:12, color:'#94a3b8' }}>{c.split('/')[0]}</span>
-              <span style={{ fontSize:13, fontWeight:800, color:COLLECTOR_COLORS[c]||'#f1f5f9' }}>₹{fmtNum(v)}</span>
+      <div style={{ background: `linear-gradient(135deg,${pgColor}28,#111827)`, borderRadius: 14, padding: '14px 16px', border: `1px solid ${pgColor}44`, margin: '12px 0' }}>
+        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>TOTAL COLLECTION — {selectedMonth.toUpperCase()}</div>
+        <div style={{ fontSize: 28, fontWeight: 900, color: pgColor }}>₹{fmtNum(totalThisMonth)}</div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+          {Object.entries(collectorMonth).map(([c, amt]) => amt > 0 && (
+            <div key={c} style={{ background: '#0a0f1e', borderRadius: 8, padding: '5px 12px', border: `1px solid ${COLLECTOR_COLORS[c] || '#334155'}44` }}>
+              <span style={{ fontSize: 12, color: '#64748b' }}>{c}: </span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: COLLECTOR_COLORS[c] || '#94a3b8' }}>₹{fmtNum(amt)}</span>
             </div>
           ))}
         </div>
       </div>
-
-      {/* PG cards */}
-      <div style={{ fontSize:11, color:'#64748b', fontWeight:700, letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>PG-wise — {selectedMonth}</div>
-      {pgStats.map(({ pgName, amt, expected, active, color, breakdown }) => {
-        const pct = expected > 0 ? Math.min(100,Math.round((amt/expected)*100)) : 0;
-        const status = pct>=100 ? '#22c55e' : pct>=70 ? '#f59e0b' : '#ef4444';
+      <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>PG-wise — {selectedMonth}</div>
+      {pgStats.map(({ pgName, amt, color, active, tenants: ts }) => {
+        const expected = active.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
+        const pct = expected > 0 ? Math.min(100, Math.round((amt / expected) * 100)) : 0;
+        const breakdown = {};
+        ts.forEach(t => { const md = t.monthly?.[selectedMonth]; if (md?.collector && md?.amount) { if (!breakdown[md.collector]) breakdown[md.collector] = 0; breakdown[md.collector] += parseFloat(md.amount) || 0; } });
         return (
-          <div key={pgName} style={{ background:'#111827', borderRadius:14, padding:'14px', border:`1px solid ${color}33`, marginBottom:8 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <div style={{ width:11, height:11, borderRadius:'50%', background:color, boxShadow:`0 0 8px ${color}` }} />
-                <div>
-                  <div style={{ fontWeight:800, fontSize:15, color }}>{pgName}</div>
-                  <div style={{ fontSize:11, color:'#64748b' }}>{active} active tenants</div>
-                </div>
+          <div key={pgName} style={{ background: '#111827', borderRadius: 12, padding: '12px 14px', border: `1px solid ${color}33`, marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
+                <span style={{ fontWeight: 700, fontSize: 15, color }}>{pgName}</span>
+                <span style={{ fontSize: 12, color: '#64748b' }}>{active.length} active</span>
               </div>
-              <div style={{ textAlign:'right' }}>
-                <div style={{ fontSize:20, fontWeight:900, color:'#f1f5f9' }}>₹{fmtNum(amt)}</div>
-                <div style={{ fontSize:11, color:status, fontWeight:700 }}>{pct}% of ₹{fmtNum(expected)}</div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 17, fontWeight: 800, color: '#f1f5f9' }}>₹{fmtNum(amt)}</div>
+                <div style={{ fontSize: 11, color: pct >= 100 ? '#22c55e' : '#f59e0b' }}>{pct}% of ₹{fmtNum(expected)}</div>
               </div>
             </div>
-            <div style={{ background:'#0a0f1e', borderRadius:4, height:6, marginBottom:8 }}>
-              <div style={{ height:'100%', background:`linear-gradient(90deg,${status},${status}88)`, borderRadius:4, width:`${pct}%`, transition:'width .4s' }} />
+            <div style={{ background: '#0a0f1e', borderRadius: 4, height: 5, marginBottom: 6 }}>
+              <div style={{ height: '100%', background: pct >= 100 ? '#22c55e' : color, borderRadius: 4, width: `${pct}%` }} />
             </div>
-            {Object.entries(breakdown).filter(([,v])=>v>0).length>0 && (
-              <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
-                {Object.entries(breakdown).filter(([,v])=>v>0).map(([c,v])=>(
-                  <div key={c} style={{ fontSize:11, background:'#0a0f1e', borderRadius:20, padding:'3px 10px', color:COLLECTOR_COLORS[c]||'#94a3b8', border:`1px solid ${COLLECTOR_COLORS[c]||'#334155'}44`, display:'flex', gap:5 }}>
-                    <span>{c.split('/')[0]}:</span><b>₹{fmtNum(v)}</b>
+            {Object.entries(breakdown).filter(([, v]) => v > 0).length > 0 && (
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {Object.entries(breakdown).filter(([, v]) => v > 0).map(([c, v]) => (
+                  <div key={c} style={{ fontSize: 11, background: '#0a0f1e', borderRadius: 6, padding: '3px 8px', color: COLLECTOR_COLORS[c] || '#94a3b8', border: `1px solid ${COLLECTOR_COLORS[c] || '#334155'}33` }}>
+                    {c.split('/')[0]}: <b>₹{fmtNum(v)}</b>
                   </div>
                 ))}
               </div>
@@ -412,198 +378,207 @@ function CollectionTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
           </div>
         );
       })}
-
-      {/* Monthly trend chart */}
-      <div style={{ background:'#111827', borderRadius:14, padding:'14px', border:'1px solid #1e293b', marginTop:8 }}>
-        <div style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:10, textTransform:'uppercase', letterSpacing:.8 }}>Monthly Collection Trend</div>
-        <div style={{ display:'flex', gap:3, alignItems:'flex-end', height:80, marginBottom:6 }}>
-          {monthlyTotals.map(({ m, col }) => (
-            <div key={m} onClick={()=>setSelectedMonth(m)} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2, cursor:'pointer' }}>
-              {col > 0 && <div style={{ fontSize:7, color:m===selectedMonth?pgColor:'#475569', fontWeight:700, marginBottom:1 }}>{(col/1000).toFixed(0)}k</div>}
-              <div style={{ width:'100%', height:Math.max(3,(col/maxBar)*68), background:m===selectedMonth?pgColor:col>0?pgColor+'55':'#1e293b', borderRadius:'3px 3px 0 0', transition:'height .3s' }} />
-              <div style={{ fontSize:8, color:m===selectedMonth?pgColor:'#475569', fontWeight:m===selectedMonth?700:400 }}>{m.slice(0,1)}</div>
+      <div style={{ background: '#111827', borderRadius: 12, padding: 14, border: '1px solid #1e293b', marginTop: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>📈 All PGs — Monthly Trend</div>
+        <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 72, marginBottom: 6 }}>
+          {monthlyTotals.map(({ m, total }) => (
+            <div key={m} onClick={() => setSelectedMonth(m)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+              <div style={{ width: '100%', height: Math.max(3, (total / maxBar) * 60), background: m === selectedMonth ? pgColor : total > 0 ? '#334155' : '#1e293b', borderRadius: 3 }} />
+              <div style={{ fontSize: 8, color: m === selectedMonth ? pgColor : '#475569', fontWeight: m === selectedMonth ? 700 : 400 }}>{m.slice(0, 1)}</div>
             </div>
           ))}
         </div>
-        <div style={{ display:'flex', justifyContent:'space-between', paddingTop:8, borderTop:'1px solid #1e293b' }}>
-          <span style={{ fontSize:12, color:'#64748b' }}>Year total</span>
-          <span style={{ fontSize:14, fontWeight:800, color:pgColor }}>₹{fmtNum(monthlyTotals.reduce((s,x)=>s+x.col,0))}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid #1e293b' }}>
+          <span style={{ fontSize: 12, color: '#64748b' }}>Year total (all PGs)</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: pgColor }}>₹{fmtNum(monthlyTotals.reduce((s, x) => s + x.total, 0))}</span>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Analytics Tab — Premium UI ───────────────────────────────
+// ── FIX 5: Analytics Tab ──────────────────────────────────────
 function AnalyticsTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
   const allTenants = Object.values(pgData).flat().filter(t => t && t.name);
   const active = allTenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
+
+  // Payment status counts
+  // FIX 1: Filter out future tenants from selectedMonth stats
   const activeThisMonth = active.filter(t => tenantActiveInMonth(t, selectedMonth));
+  const fullyPaid = activeThisMonth.filter(t => {
+    const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
+    const r = parseFloat(t.rent) || 0;
+    return r > 0 && p >= r;
+  }).length;
+  const halfPaidCount = activeThisMonth.filter(t => {
+    const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
+    const r = parseFloat(t.rent) || 0;
+    return p > 0 && p < r;
+  }).length;
+  const unpaidCount = activeThisMonth.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)).length;
+  const noDepositCount = active.filter(t => !t.deposit || t.deposit === '' || t.deposit === '0').length;
 
-  const fullyPaid    = activeThisMonth.filter(t => { const p=parseFloat(t.monthly?.[selectedMonth]?.amount)||0, r=parseFloat(t.rent)||0; return r>0&&p>=r; }).length;
-  const halfPaidC    = activeThisMonth.filter(t => { const p=parseFloat(t.monthly?.[selectedMonth]?.amount)||0, r=parseFloat(t.rent)||0; return p>0&&p<r; }).length;
-  const unpaidC      = activeThisMonth.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount)||0)).length;
-  const noDepC       = active.filter(t => !t.deposit||t.deposit===''||t.deposit==='0').length;
-  const totalCollected = allTenants.reduce((s,t)=>s+(parseFloat(t.monthly?.[selectedMonth]?.amount)||0),0);
-  const totalExpected  = activeThisMonth.reduce((s,t)=>s+(parseFloat(t.rent)||0),0);
+  const totalCollected = allTenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
+  const totalExpected = activeThisMonth.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
   const totalDue = Math.max(0, totalExpected - totalCollected);
-  const collPct  = totalExpected > 0 ? Math.round((totalCollected/totalExpected)*100) : 0;
 
-  const totalDepHeld = active.filter(t=>t.deposit&&t.deposit!==''&&t.deposit!=='0').reduce((s,t)=>s+(parseFloat(t.deposit)||0),0);
-  const depPct = active.length > 0 ? Math.round(((active.length-noDepC)/active.length)*100) : 0;
+  // Deposit stats
+  const totalDepositCollected = active.filter(t => t.deposit && t.deposit !== '' && t.deposit !== '0').reduce((s, t) => s + (parseFloat(t.deposit) || 0), 0);
+  const depositPendingCount = noDepositCount;
+  const depositTotal = active.reduce((s, t) => s + (parseFloat(t.deposit) || 0), 0);
+  const depositPct = depositTotal > 0 ? Math.round((totalDepositCollected / (totalDepositCollected + depositPendingCount * 5000)) * 100) : 0;
 
-  // Collector totals
-  const collectorData = COLLECTORS.map(col => {
-    const c = COLLECTOR_COLORS[col]||'#94a3b8';
-    const month = allTenants.reduce((s,t)=>{ const md=t.monthly?.[selectedMonth]; return md?.collector===col?s+(parseFloat(md.amount)||0):s; },0);
-    const year  = allTenants.reduce((s,t)=>s+MONTHS.reduce((ss,m)=>{ const md=t.monthly?.[m]; return md?.collector===col?ss+(parseFloat(md.amount)||0):ss; },0),0);
-    return { col, c, month, year };
-  }).filter(x=>x.year>0);
+  // Monthly trend for bar chart
+  const monthlyData = MONTHS.map(m => {
+    const col = allTenants.reduce((s, t) => s + (parseFloat(t.monthly?.[m]?.amount) || 0), 0);
+    const act = allTenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
+    const exp = act.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
+    return { m, col, exp };
+  });
+  const maxVal = Math.max(...monthlyData.map(x => Math.max(x.col, x.exp)), 1);
 
-  // Monthly dual-bar
-  const monthlyData = MONTHS.map(m => ({
-    m,
-    col: allTenants.reduce((s,t)=>s+(parseFloat(t.monthly?.[m]?.amount)||0),0),
-    exp: active.reduce((s,t)=>s+(parseFloat(t.rent)||0),0)
-  }));
-  const maxVal = Math.max(...monthlyData.map(x=>Math.max(x.col,x.exp)),1);
-
-  // PG breakdown
-  const pgBreakdown = Object.entries(pgData).map(([pgName,ts]) => {
-    const tt = (ts||[]).filter(t=>t&&t.name);
-    const act = tt.filter(t=>!t.dateLeaving||new Date(t.dateLeaving)>=new Date());
-    const exp = act.reduce((s,t)=>s+(parseFloat(t.rent)||0),0);
-    const col = tt.reduce((s,t)=>s+(parseFloat(t.monthly?.[selectedMonth]?.amount)||0),0);
-    const paid = act.filter(t=>(parseFloat(t.monthly?.[selectedMonth]?.amount)||0)>=(parseFloat(t.rent)||1)).length;
-    return { pgName, exp, col, paid, total:act.length, color:PG_COLORS[pgName]||'#6366f1' };
-  }).filter(p=>p.total>0);
-
-  const statCards = [
-    { lbl:'Fully Paid', val:fullyPaid, c:'#22c55e', icon:'✅', sub:`of ${activeThisMonth.length}` },
-    { lbl:'Half Paid',  val:halfPaidC, c:'#f59e0b', icon:'⚡', sub:'partial' },
-    { lbl:'Not Paid',   val:unpaidC,   c:'#ef4444', icon:'⏳', sub:'pending' },
-    { lbl:'No Deposit', val:noDepC,    c:'#f59e0b', icon:'🔒', sub:'missing' },
-  ];
+  // Per-PG profit overview
+  const pgAnalytics = Object.entries(pgData).map(([pgName, tenants]) => {
+    const act = tenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
+    const expected = act.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
+    const collected = tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
+    const paidCount = act.filter(t => (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) >= (parseFloat(t.rent) || 1)).length;
+    return { pgName, expected, collected, paidCount, total: act.length, color: PG_COLORS[pgName] || '#6366f1' };
+  });
 
   return (
-    <div style={{ padding:'0 14px 88px', maxWidth:700, margin:'0 auto' }}>
+    <div style={{ padding: '0 14px 88px', maxWidth: 700, margin: '0 auto' }}>
       <MonthBar sel={selectedMonth} setSel={setSelectedMonth} clr={pgColor} />
-      <div style={{ marginTop:12 }}>
+      <div style={{ marginTop: 12 }}>
 
-        {/* Payment status cards */}
-        <div style={{ fontSize:11, color:'#64748b', fontWeight:700, letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>{selectedMonth} — Payment Status</div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:8, marginBottom:14 }}>
-          {statCards.map(s => (
-            <div key={s.lbl} style={{ background:'#111827', borderRadius:12, padding:'12px 8px', border:`1px solid ${s.c}33`, textAlign:'center', position:'relative', overflow:'hidden' }}>
-              <div style={{ position:'absolute', top:-8, right:-4, fontSize:32, opacity:.1 }}>{s.icon}</div>
-              <div style={{ fontSize:22, fontWeight:900, color:s.c }}>{s.val}</div>
-              <div style={{ fontSize:10, color:'#64748b', marginTop:1 }}>{s.lbl}</div>
-              <div style={{ fontSize:9, color:s.c, marginTop:2, fontWeight:600 }}>{s.sub}</div>
+        {/* Payment status */}
+        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }}>{selectedMonth} — Payment Status</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
+          {[
+            { lbl: 'Fully Paid', val: fullyPaid, c: '#22c55e', b: '#22c55e33' },
+            { lbl: 'Half Paid', val: halfPaidCount, c: '#f59e0b', b: '#f59e0b33' },
+            { lbl: 'Unpaid', val: unpaidCount, c: '#ef4444', b: '#ef444433' },
+            { lbl: 'No Deposit', val: noDepositCount, c: '#f59e0b', b: '#f59e0b33' },
+          ].map(s => (
+            <div key={s.lbl} style={{ background: '#111827', borderRadius: 10, padding: '10px 8px', border: `1px solid ${s.b}`, textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: s.c }}>{s.val}</div>
+              <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{s.lbl}</div>
             </div>
           ))}
         </div>
 
         {/* Collected vs Due */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
-          <div style={{ background:'#111827', borderRadius:14, padding:'14px', border:'1px solid #22c55e33', position:'relative', overflow:'hidden' }}>
-            <div style={{ position:'absolute', bottom:-10, right:-10, width:60, height:60, borderRadius:'50%', background:'#22c55e11' }} />
-            <div style={{ fontSize:11, color:'#64748b' }}>Total Collected</div>
-            <div style={{ fontSize:22, fontWeight:900, color:'#22c55e', margin:'4px 0' }}>₹{fmtNum(totalCollected)}</div>
-            <div style={{ background:'#0a0f1e', borderRadius:4, height:4, marginBottom:4 }}>
-              <div style={{ height:'100%', background:'#22c55e', borderRadius:4, width:`${collPct}%` }} />
-            </div>
-            <div style={{ fontSize:10, color:'#22c55e', fontWeight:700 }}>{collPct}% of expected</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          <div style={{ background: 'linear-gradient(135deg,#22c55e14,#111827)', borderRadius: 12, padding: '12px 14px', border: '1px solid #22c55e33' }}>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Collected</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#22c55e' }}>₹{fmtNum(totalCollected)}</div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 100) : 0}% of expected</div>
           </div>
-          <div style={{ background:'#111827', borderRadius:14, padding:'14px', border:'1px solid #ef444433', position:'relative', overflow:'hidden' }}>
-            <div style={{ position:'absolute', bottom:-10, right:-10, width:60, height:60, borderRadius:'50%', background:'#ef444411' }} />
-            <div style={{ fontSize:11, color:'#64748b' }}>Total Due</div>
-            <div style={{ fontSize:22, fontWeight:900, color:'#ef4444', margin:'4px 0' }}>₹{fmtNum(totalDue)}</div>
-            <div style={{ fontSize:10, color:'#ef4444', fontWeight:700, marginTop:8 }}>{unpaidC+halfPaidC} tenants pending</div>
+          <div style={{ background: 'linear-gradient(135deg,#ef444414,#111827)', borderRadius: 12, padding: '12px 14px', border: '1px solid #ef444433' }}>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Total Due</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444' }}>₹{fmtNum(totalDue)}</div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{unpaidCount + halfPaidCount} tenants</div>
           </div>
         </div>
 
-        {/* Dual bar chart */}
-        <div style={{ background:'#111827', borderRadius:14, padding:'14px', border:'1px solid #1e293b', marginBottom:14 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:.8 }}>Collected vs Expected</div>
-            <div style={{ display:'flex', gap:10 }}>
-              <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#64748b' }}><span style={{ width:10,height:10,borderRadius:2,background:pgColor,display:'inline-block' }}/>Collected</span>
-              <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#64748b' }}><span style={{ width:10,height:10,borderRadius:2,background:'#1e293b',border:'1px solid #334155',display:'inline-block' }}/>Expected</span>
-            </div>
+        {/* Monthly collection vs expected bar chart */}
+        <div style={{ background: '#111827', borderRadius: 12, padding: '12px 14px', border: '1px solid #1e293b', marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>📊 Collected vs Expected</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: pgColor }} /><span style={{ fontSize: 11, color: '#64748b' }}>Collected</span></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: '#334155' }} /><span style={{ fontSize: 11, color: '#64748b' }}>Expected</span></div>
           </div>
-          <div style={{ display:'flex', gap:3, alignItems:'flex-end', height:90 }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 80 }}>
             {monthlyData.map(({ m, col, exp }) => (
-              <div key={m} onClick={()=>setSelectedMonth(m)} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2, cursor:'pointer' }}>
-                <div style={{ width:'100%', position:'relative', height:Math.max(4,(Math.max(col,exp)/maxVal)*80) }}>
-                  <div style={{ position:'absolute', bottom:0, width:'100%', height:Math.max(2,(exp/maxVal)*80), background:m===selectedMonth?'#334155':'#1e293b', borderRadius:'3px 3px 0 0' }} />
-                  <div style={{ position:'absolute', bottom:0, width:'65%', left:'17.5%', height:Math.max(2,(col/maxVal)*80), background:m===selectedMonth?pgColor:col>0?pgColor+'99':'#334155', borderRadius:'3px 3px 0 0', transition:'height .3s' }} />
+              <div key={m} onClick={() => setSelectedMonth(m)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'pointer' }}>
+                <div style={{ width: '100%', position: 'relative', height: Math.max(3, (Math.max(col, exp) / maxVal) * 68) }}>
+                  {/* expected bar (background) */}
+                  <div style={{ position: 'absolute', bottom: 0, width: '100%', height: Math.max(2, (exp / maxVal) * 68), background: m === selectedMonth ? '#475569' : '#1e293b', borderRadius: '3px 3px 0 0' }} />
+                  {/* collected bar (foreground) */}
+                  <div style={{ position: 'absolute', bottom: 0, width: '60%', left: '20%', height: Math.max(2, (col / maxVal) * 68), background: m === selectedMonth ? pgColor : col > 0 ? pgColor + '88' : '#334155', borderRadius: '3px 3px 0 0', transition: 'height .3s' }} />
                 </div>
-                <div style={{ fontSize:7, color:m===selectedMonth?pgColor:'#475569', fontWeight:m===selectedMonth?700:400 }}>{m.slice(0,1)}</div>
+                <div style={{ fontSize: 7, color: m === selectedMonth ? pgColor : '#475569', fontWeight: m === selectedMonth ? 700 : 400 }}>{m.slice(0, 1)}</div>
               </div>
             ))}
           </div>
         </div>
-
-        {/* Collector cards */}
-        {collectorData.length > 0 && <>
-          <div style={{ fontSize:11, color:'#64748b', fontWeight:700, letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>Collector Summary</div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:10, marginBottom:14 }}>
-            {collectorData.map(({ col, c, month, year }) => (
-              <div key={col} style={{ background:`linear-gradient(135deg,${c}18,#111827)`, borderRadius:14, padding:'14px', border:`1px solid ${c}44` }}>
-                <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
-                  <div style={{ width:10, height:10, borderRadius:'50%', background:c, boxShadow:`0 0 6px ${c}` }} />
-                  <span style={{ fontSize:13, fontWeight:800, color:c }}>{col.split('/')[0]}</span>
-                </div>
-                <div style={{ fontSize:10, color:'#64748b' }}>{selectedMonth}</div>
-                <div style={{ fontSize:20, fontWeight:900, color:'#f1f5f9', marginBottom:8 }}>₹{fmtNum(month)}</div>
-                <div style={{ borderTop:`1px solid ${c}22`, paddingTop:8 }}>
-                  <div style={{ fontSize:10, color:'#64748b' }}>All Time</div>
-                  <div style={{ fontSize:14, fontWeight:700, color:c }}>₹{fmtNum(year)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>}
 
         {/* Deposit status */}
-        <div style={{ background:'#111827', borderRadius:14, padding:'14px', border:'1px solid #1e293b', marginBottom:14 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:.8 }}>Deposit Status</div>
-            <div style={{ fontSize:12, color:depPct>=80?'#22c55e':'#f59e0b', fontWeight:700 }}>{depPct}% tenants</div>
+        <div style={{ background: '#111827', borderRadius: 12, padding: '12px 14px', border: '1px solid #1e293b', marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>🔒 Deposit Status</div>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#22c55e' }}>{active.length - noDepositCount}</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>Deposit Given</div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#ef4444' }}>{noDepositCount}</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>No Deposit</div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: pgColor }}>₹{fmtNum(totalDepositCollected)}</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>Total Held</div>
+            </div>
           </div>
-          <div style={{ display:'flex', gap:10, marginBottom:10 }}>
-            {[{lbl:'Given',val:active.length-noDepC,c:'#22c55e'},{lbl:'Pending',val:noDepC,c:'#ef4444'},{lbl:'Held ₹',val:'₹'+(totalDepHeld/1000).toFixed(0)+'k',c:pgColor}].map(s=>(
-              <div key={s.lbl} style={{ flex:1, background:'#0a0f1e', borderRadius:10, padding:'10px', textAlign:'center' }}>
-                <div style={{ fontSize:18, fontWeight:800, color:s.c }}>{s.val}</div>
-                <div style={{ fontSize:10, color:'#64748b', marginTop:2 }}>{s.lbl}</div>
-              </div>
-            ))}
+          <div style={{ background: '#0a0f1e', borderRadius: 4, height: 8 }}>
+            <div style={{ height: '100%', background: 'linear-gradient(90deg,#22c55e,#16a34a)', borderRadius: 4, width: `${active.length > 0 ? Math.round(((active.length - noDepositCount) / active.length) * 100) : 0}%` }} />
           </div>
-          <div style={{ background:'#0a0f1e', borderRadius:6, height:8 }}>
-            <div style={{ height:'100%', background:`linear-gradient(90deg,#22c55e,#16a34a)`, borderRadius:6, width:`${depPct}%`, transition:'width .5s' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+            <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 600 }}>{active.length > 0 ? Math.round(((active.length - noDepositCount) / active.length) * 100) : 0}% tenants gave deposit</span>
+            <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>{noDepositCount} pending</span>
           </div>
         </div>
 
-        {/* PG breakdown */}
-        <div style={{ fontSize:11, color:'#64748b', fontWeight:700, letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>PG-wise — {selectedMonth}</div>
-        {pgBreakdown.map(({ pgName, exp, col, paid, total, color }) => {
-          const pct = exp>0?Math.min(100,Math.round((col/exp)*100)):0;
-          const sc = pct>=100?'#22c55e':pct>=70?'#f59e0b':'#ef4444';
-          return (
-            <div key={pgName} style={{ background:'#111827', borderRadius:12, padding:'12px 14px', border:`1px solid ${color}33`, marginBottom:8 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                  <div style={{ width:9, height:9, borderRadius:'50%', background:color, boxShadow:`0 0 5px ${color}` }} />
-                  <span style={{ fontWeight:800, fontSize:14, color }}>{pgName}</span>
-                  <span style={{ fontSize:11, color:'#64748b' }}>{paid}/{total} paid</span>
+        {/* FIX 4: Collector totals — all time and this month */}
+        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }}>Collector Totals</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 10, marginBottom: 14 }}>
+          {COLLECTORS.map(col => {
+            const c = COLLECTOR_COLORS[col] || '#94a3b8';
+            const thisMonth = allTenants.reduce((s, t) => {
+              const md = t.monthly?.[selectedMonth];
+              return md?.collector === col ? s + (parseFloat(md.amount) || 0) : s;
+            }, 0);
+            const allTime = allTenants.reduce((s, t) =>
+              s + MONTHS.reduce((ss, m) => {
+                const md = t.monthly?.[m];
+                return md?.collector === col ? ss + (parseFloat(md.amount) || 0) : ss;
+              }, 0), 0);
+            if (allTime === 0) return null;
+            return (
+              <div key={col} style={{ background: `linear-gradient(135deg,${c}14,#111827)`, borderRadius: 12, padding: '12px 14px', border: `1px solid ${c}44` }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: c, marginBottom: 6 }}>{col}</div>
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>{selectedMonth}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#f1f5f9' }}>₹{fmtNum(thisMonth)}</div>
                 </div>
-                <div style={{ textAlign:'right' }}>
-                  <span style={{ fontSize:15, fontWeight:800 }}>₹{fmtNum(col)}</span>
-                  <span style={{ fontSize:11, color:'#64748b' }}> / ₹{fmtNum(exp)}</span>
+                <div style={{ borderTop: `1px solid ${c}22`, paddingTop: 6 }}>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>All Time Total</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: c }}>₹{fmtNum(allTime)}</div>
                 </div>
               </div>
-              <div style={{ background:'#0a0f1e', borderRadius:4, height:5 }}>
-                <div style={{ height:'100%', background:`linear-gradient(90deg,${sc},${sc}88)`, borderRadius:4, width:`${pct}%` }} />
+            );
+          })}
+        </div>
+
+        {/* Per-PG analytics */}
+        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }}>PG-wise Breakdown — {selectedMonth}</div>
+        {pgAnalytics.filter(p => p.total > 0).map(({ pgName, expected, collected, paidCount, total, color }) => {
+          const pct = expected > 0 ? Math.min(100, Math.round((collected / expected) * 100)) : 0;
+          return (
+            <div key={pgName} style={{ background: '#111827', borderRadius: 10, padding: '10px 14px', border: `1px solid ${color}33`, marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ width: 9, height: 9, borderRadius: '50%', background: color }} />
+                  <span style={{ fontWeight: 700, fontSize: 14, color }}>{pgName}</span>
+                  <span style={{ fontSize: 11, color: '#64748b' }}>{paidCount}/{total} paid</span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: 15, fontWeight: 800 }}>₹{fmtNum(collected)}</span>
+                  <span style={{ fontSize: 11, color: '#64748b' }}> / ₹{fmtNum(expected)}</span>
+                </div>
+              </div>
+              <div style={{ background: '#0a0f1e', borderRadius: 3, height: 5 }}>
+                <div style={{ height: '100%', background: pct >= 100 ? '#22c55e' : color, borderRadius: 3, width: `${pct}%` }} />
               </div>
             </div>
           );
@@ -630,7 +605,7 @@ export default function App() {
   const [infoModal, setInfoModal] = useState(null);
   const [payModal, setPayModal] = useState(null);
   const [urlDraft, setUrlDraft] = useState(webAppUrl);
-  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', depositPaid: '', rent: '', rentPaidOnJoining: '', dateJoining: '', dateLeaving: '', note: '' });
+  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
   const [pendingTab, setPendingTab] = useState('rent');
 
   const isAdmin = userRole === 'admin';
@@ -758,7 +733,13 @@ export default function App() {
     (t.name.toLowerCase().includes(search.toLowerCase()) || (t.contact || '').includes(search))
   );
 
-  const active = tenants.filter(t => !t.dateLeaving || new Date(t.dateLeaving) >= new Date());
+  // FIX: proper left tenant check - tenant is active if NO leaving date OR leaving date is in future
+  const isActiveTenant = t => {
+    if (!t.dateLeaving || String(t.dateLeaving).trim() === '') return true;
+    try { return new Date(t.dateLeaving) >= new Date(new Date().toDateString()); }
+    catch(e) { return true; }
+  };
+  const active = tenants.filter(isActiveTenant);
   const totalRent = active.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
   const collected = tenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
   const grandTotal = allTenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
@@ -778,13 +759,6 @@ export default function App() {
     const today = new Date();
     const daysSince = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
     return daysSince >= 15; // 15+ days beet gaye, deposit nahi diya
-  });
-  
-  // Partial deposit check (depositPaid < deposit)
-  const depositPartial = active.filter(t => {
-    const paid = parseFloat(t.depositPaid) || 0;
-    const expected = parseFloat(t.deposit) || 0;
-    return expected > 0 && paid > 0 && paid < expected;
   });
   const halfPaid = active.filter(t => { const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0; const r = parseFloat(t.rent) || 0; return p > 0 && p < r; });
 
@@ -813,35 +787,10 @@ export default function App() {
   // FIX 3+6: Both admin & viewer can add tenant (prepend = newest on top after sort)
   async function addTenant() {
     if (!newTenant.name.trim()) return showToast('Naam zaroor daalo', 'error');
-    
-    // FIX 1: Handle partial payment on joining
-    // If rentPaidOnJoining is filled → pre-fill joining month's payment
-    const monthly = emptyMonthly();
-    const joiningDate = newTenant.dateJoining ? new Date(newTenant.dateJoining) : new Date();
-    const joiningMonthName = MONTHS[joiningDate.getMonth()];
-    
-    if (newTenant.rentPaidOnJoining && parseFloat(newTenant.rentPaidOnJoining) > 0) {
-      const paid = parseFloat(newTenant.rentPaidOnJoining);
-      const fullRent = parseFloat(newTenant.rent) || 0;
-      monthly[joiningMonthName] = {
-        amount: String(paid),
-        halfFull: paid >= fullRent ? 'Full' : 'Half',
-        collector: 'Cash/other',
-        note: 'Paid at joining'
-      };
-    }
-
-    // Build tenant object with unique ID
-    const { rentPaidOnJoining, depositPaid, ...rest } = newTenant;
-    const tenant = {
-      ...rest,
-      depositPaid: depositPaid || '',
-      monthly
-    };
-    
+    const tenant = { ...newTenant, monthly: emptyMonthly() };
     const newData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
     setPgData(newData);
-    setNewTenant({ name: '', contact: '', deposit: '', depositPaid: '', rent: '', rentPaidOnJoining: '', dateJoining: '', dateLeaving: '', note: '' });
+    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
     setShowAddTenant(false);
     showToast('✅ Tenant added!', 'success');
     await doPush(newData);
@@ -1061,33 +1010,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Partial deposit */}
-                {depositPartial.length > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 5, textTransform: 'uppercase', letterSpacing: .5 }}>Partial Deposit</div>
-                    {depositPartial.map(t => {
-                      const paid = parseFloat(t.depositPaid) || 0;
-                      const expected = parseFloat(t.deposit) || 0;
-                      const remaining = expected - paid;
-                      return (
-                        <div key={t.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #1e293b', alignItems: 'center' }}>
-                          <div>
-                            <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
-                            <div style={{ fontSize: 12, color: '#64748b' }}>Paid: ₹{fmtNum(paid)} / Expected: ₹{fmtNum(expected)}</div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 13 }}>₹{fmtNum(remaining)} baaki</div>
-                            {t.contact && (
-                              <a href={waLink(t.contact, waDepositMsg(t.name, 0))} target="_blank" rel="noreferrer"
-                                style={{ fontSize: 11, color: '#25d366', textDecoration: 'none', fontWeight: 700 }}>💬 Remind</a>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
                 {depositPending.length === 0
                   ? <div style={{ color: '#22c55e', fontSize: 14, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
                   : depositPending.map(t => {
@@ -1151,24 +1073,15 @@ export default function App() {
                     <Input label="Contact" value={newTenant.contact} onChange={v => setNewTenant(p => ({ ...p, contact: v }))} />
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <Input label="Deposit Expected ₹" value={newTenant.deposit} onChange={v => setNewTenant(p => ({ ...p, deposit: v }))} />
-                    <Input label="Deposit Paid ₹ (abhi tak)" value={newTenant.depositPaid} onChange={v => setNewTenant(p => ({ ...p, depositPaid: v }))} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Input label="Deposit ₹" value={newTenant.deposit} onChange={v => setNewTenant(p => ({ ...p, deposit: v }))} />
                     <Input label="Rent ₹/mo" value={newTenant.rent} onChange={v => setNewTenant(p => ({ ...p, rent: v }))} />
-                    <Input label="Joining Month Rent Paid ₹ (0 if unpaid)" value={newTenant.rentPaidOnJoining} onChange={v => setNewTenant(p => ({ ...p, rentPaidOnJoining: v }))} />
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <Input label="Date Joining" type="date" value={newTenant.dateJoining} onChange={v => setNewTenant(p => ({ ...p, dateJoining: v }))} />
                     <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
                   </div>
                   <Input label="Note" value={newTenant.note} onChange={v => setNewTenant(p => ({ ...p, note: v }))} />
-                  {/* FIX 1: Show partial payment summary */}
-                  {(newTenant.depositPaid && newTenant.deposit && parseFloat(newTenant.depositPaid) < parseFloat(newTenant.deposit)) && (
-                    <div style={{ background: '#f59e0b18', border: '1px solid #f59e0b44', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#f59e0b' }}>
-                      ⚠ Deposit baaki: ₹{fmtNum(parseFloat(newTenant.deposit) - parseFloat(newTenant.depositPaid))} — baad mein milega
-                    </div>
-                  )}
+
                   <button onClick={addTenant}
                     style={{ background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>
                     ✅ Add Tenant + Auto Sync
