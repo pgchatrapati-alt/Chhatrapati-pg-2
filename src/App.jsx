@@ -1094,6 +1094,14 @@ export default function App() {
                     <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
                   </div>
                   <Input label="Note" value={newTenant.note} onChange={v => setNewTenant(p => ({ ...p, note: v }))} />
+                  <div style={{ borderTop: '1px solid #1e293b', paddingTop: 10, marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, marginBottom: 8 }}>JOINING KE TIME PAYMENT (optional)</div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <Input label="Rent Paid ₹" value={newTenant.joiningRentAmt} onChange={v => setNewTenant(p => ({ ...p, joiningRentAmt: v }))} />
+                      <Sel label="Full/Half" value={newTenant.joiningRentHalfFull} onChange={v => setNewTenant(p => ({ ...p, joiningRentHalfFull: v }))} options={['Full', 'Half']} />
+                    </div>
+                    <Input label="Deposit Paid ₹" value={newTenant.joiningDepositPaid} onChange={v => setNewTenant(p => ({ ...p, joiningDepositPaid: v }))} />
+                  </div>
 
                   <button onClick={addTenant}
                     style={{ background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>
