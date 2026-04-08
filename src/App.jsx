@@ -53,9 +53,10 @@ function isValidPG(name) {
 // Example: joined 01 Apr 2026 → Jan 2026 mein pending nahi dikhna chahiye
 function tenantActiveInMonth(tenant, monthName) {
   if (!tenant.dateJoining) return true;
-  const joinDate = new Date(tenant.dateJoining);
+  const joinDate  = new Date(tenant.dateJoining);
   const joinYear  = joinDate.getFullYear();
   const joinMonth = joinDate.getMonth(); // 0-indexed
+  const joinDay   = joinDate.getDate();
 
   const MONTHS_IDX = {
     January:0,February:1,March:2,April:3,May:4,June:5,
@@ -67,13 +68,26 @@ function tenantActiveInMonth(tenant, monthName) {
   const now     = new Date();
   const selYear = now.getFullYear();
 
-  // Only block if tenant joins IN THE FUTURE relative to selected month+year
-  // Past years: always active
+  // Past year tenants: always active
   if (joinYear < selYear) return true;
-  // Same year: block if joined after selected month
-  if (joinYear === selYear && joinMonth > selIdx) return false;
-  // Future year joiners: never show as pending
+  // Future year: never show pending
   if (joinYear > selYear) return false;
+
+  // Same year:
+  // Joined after selected month → not active yet
+  if (joinMonth > selIdx) return false;
+
+  // Joined in the SAME month as selected month:
+  // Only show as pending after their joining day has passed today
+  if (joinMonth === selIdx) {
+    // If selected month is current month → check today's date >= joining day
+    if (selIdx === now.getMonth()) {
+      return now.getDate() >= joinDay;
+    }
+    // If selected month is in the past → always show (they have joined)
+    return true;
+  }
+
   return true;
 }
 const FS = 15; // base font size +1
@@ -605,7 +619,7 @@ export default function App() {
   const [infoModal, setInfoModal] = useState(null);
   const [payModal, setPayModal] = useState(null);
   const [urlDraft, setUrlDraft] = useState(webAppUrl);
-  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
+  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '' });
   const [pendingTab, setPendingTab] = useState('rent');
 
   const isAdmin = userRole === 'admin';
@@ -718,11 +732,10 @@ export default function App() {
   // Guard: filter out any null/undefined/empty tenant objects
   const validTenants = tenants.filter(t => t && t.name);
   const sortedTenants = [...validTenants].sort((a, b) => {
-    const aLeft = a.dateLeaving && new Date(a.dateLeaving) < new Date();
-    const bLeft = b.dateLeaving && new Date(b.dateLeaving) < new Date();
-    if (aLeft && !bLeft) return 1;   // left always goes to bottom
+    const aLeft = !!(a.dateLeaving && String(a.dateLeaving).trim() !== '');
+    const bLeft = !!(b.dateLeaving && String(b.dateLeaving).trim() !== '');
+    if (aLeft && !bLeft) return 1;   // left always at bottom
     if (!aLeft && bLeft) return -1;
-    // Extract only the day-of-month (1–31), ignore month & year
     const dayA = a.dateJoining ? new Date(a.dateJoining).getDate() : 32;
     const dayB = b.dateJoining ? new Date(b.dateJoining).getDate() : 32;
     return dayA - dayB;
@@ -790,7 +803,7 @@ export default function App() {
     const tenant = { ...newTenant, monthly: emptyMonthly() };
     const newData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
     setPgData(newData);
-    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '' });
+    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '' });
     setShowAddTenant(false);
     showToast('✅ Tenant added!', 'success');
     await doPush(newData);
