@@ -66,28 +66,34 @@ function tenantActiveInMonth(tenant, monthName) {
   if (selIdx === undefined) return true;
 
   const now     = new Date();
-  const selYear = now.getFullYear();
+  const nowYear = now.getFullYear();
+  const nowMonth= now.getMonth();
+  const nowDay  = now.getDate();
 
-  // Past year tenants: always active
-  if (joinYear < selYear) return true;
-  // Future year: never show pending
-  if (joinYear > selYear) return false;
+  // Past year tenants: always show
+  if (joinYear < nowYear) return true;
+  // Future year joiners: never show
+  if (joinYear > nowYear) return false;
 
-  // Same year:
-  // Joined after selected month → not active yet
+  // Same join year as current year:
+  // Tenant joined after selected month → not yet active for that month
   if (joinMonth > selIdx) return false;
 
-  // Joined in the SAME month as selected month:
-  // Only show as pending after their joining day has passed today
+  // Tenant joined IN THE SAME MONTH as selected month:
+  // Only show if today's date >= joining day (rent cycle started)
+  // Example: joined 22 April, selected April, today 9 April → DON'T show
+  // Example: joined 22 April, selected April, today 25 April → SHOW
   if (joinMonth === selIdx) {
-    // If selected month is current month → check today's date >= joining day
-    if (selIdx === now.getMonth()) {
-      return now.getDate() >= joinDay;
+    // Selected month is current month or future
+    if (selIdx >= nowMonth) {
+      // Only show if today is on or after joining day
+      return nowDay >= joinDay;
     }
-    // If selected month is in the past → always show (they have joined)
+    // Selected month is past → always show
     return true;
   }
 
+  // Tenant joined before selected month → always active for that month
   return true;
 }
 const FS = 15; // base font size +1
@@ -196,8 +202,10 @@ function LoginScreen({ onLogin }) {
 // ── Info Modal (Tenant tab click) ─────────────────────────────
 function TenantInfoModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave }) {
   const [form, setForm] = useState({ ...tenant });
+  const [newRentFrom, setNewRentFrom] = useState('');
   const totalPaid = MONTHS.reduce((s, m) => s + (parseFloat(tenant.monthly?.[m]?.amount) || 0), 0);
   const isActive = !tenant.dateLeaving || new Date(tenant.dateLeaving) >= new Date();
+  const rentChanged = parseFloat(form.rent) !== parseFloat(tenant.rent);
   return (
     <div style={S.overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={S.modal}>
@@ -237,6 +245,26 @@ function TenantInfoModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave
             <Input label="Rent ₹/mo" value={form.rent || ''} onChange={v => setForm(p => ({ ...p, rent: v }))} />
             <Input label="Note" value={form.note || ''} onChange={v => setForm(p => ({ ...p, note: v }))} />
           </div>
+          {rentChanged && (
+            <div style={{ background: '#f59e0b18', border: '1px solid #f59e0b44', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 700, marginBottom: 6 }}>
+                Rent change: ₹{fmtNum(tenant.rent)} → ₹{fmtNum(form.rent)}
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>Kis month se naya rent lagega?</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select value={newRentFrom} onChange={e => setNewRentFrom(e.target.value)}
+                  style={{ ...S.input, flex: 1, fontSize: 13 }}>
+                  <option value="">— Month select karo —</option>
+                  {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              {newRentFrom && (
+                <div style={{ fontSize: 11, color: '#22c55e', marginTop: 6, fontWeight: 600 }}>
+                  ✅ Note mein save hoga: "Rent changed to ₹{fmtNum(form.rent)} from {newRentFrom}"
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <Input label="Date Joining" type="date" value={form.dateJoining || ''} onChange={v => setForm(p => ({ ...p, dateJoining: v }))} />
             <Input label="Date Leaving" type="date" value={form.dateLeaving || ''} onChange={v => setForm(p => ({ ...p, dateLeaving: v }))} />
@@ -244,7 +272,15 @@ function TenantInfoModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave
         </div>
         {/* FIX 5: Both admin & viewer can edit & save Info */}
         <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '1px solid #1e293b' }}>
-          <button onClick={() => onSave({ ...form, monthly: tenant.monthly || emptyMonthly() })}
+          <button onClick={() => {
+              let finalForm = { ...form };
+              if (rentChanged && newRentFrom) {
+                const oldNote = String(form.note || '').trim();
+                const rentNote = 'Rent changed to Rs.' + form.rent + ' from ' + newRentFrom;
+                finalForm.note = oldNote ? oldNote + ' | ' + rentNote : rentNote;
+              }
+              onSave({ ...finalForm, monthly: tenant.monthly || emptyMonthly() });
+            }}
             style={{ flex: 1, background: '#f59e0b', border: 'none', color: '#1a1000', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 800, fontSize: 15 }}>💾 Save + Auto Sync</button>
           <button onClick={onClose} style={S.ghostBtn}>Close</button>
         </div>
@@ -1096,38 +1132,38 @@ export default function App() {
                               </div>
                             )}
                           </div>
-                          <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 700, fontSize: 12 }}>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
                               {isHalf ? 'Half Paid' : isOverdue ? 'Overdue!' : 'Pending'}
                             </div>
                             {t.contact && (
                               <a href={waLink(t.contact, waDepositMsg(t.name, days))} target="_blank" rel="noreferrer"
                                 onClick={e => e.stopPropagation()}
-                                style={{ fontSize: 11, color: '#25d366', textDecoration: 'none', fontWeight: 700 }}>💬 Remind</a>
-                            )}
-                            {/* Owner Managed button — removes from pending list */}
-                            {isAdmin && (
-                              <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  const key = t.name + t.dateJoining;
-                                  const note = String(t.note || '').replace('[DEPOSIT-MANAGED]','').trim();
-                                  const updated = pgData[selectedPG].map(x =>
-                                    (x.name + x.dateJoining) === key
-                                      ? { ...x, note: note ? note + ' [DEPOSIT-MANAGED]' : '[DEPOSIT-MANAGED]' }
-                                      : x
-                                  );
-                                  const newData = { ...pgData, [selectedPG]: updated };
-                                  setPgData(newData);
-                                  doPush(newData);
-                                  showToast(t.name + ' — deposit managed ✅');
-                                }}
-                                style={{ fontSize: 10, background: '#22c55e22', border: '1px solid #22c55e44', color: '#22c55e', padding: '3px 8px', borderRadius: 6, cursor: 'pointer', fontWeight: 700 }}>
-                                ✅ Owner Managed
-                              </button>
+                                style={{ fontSize: 11, color: '#25d366', textDecoration: 'none', fontWeight: 700, display: 'block', marginBottom: 6 }}>💬 Remind</a>
                             )}
                           </div>
                         </div>
+                        {/* FIX 2: Owner Managed — full width, below, away from remind */}
+                        {isAdmin && (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              const key = t.name + t.dateJoining;
+                              const note = String(t.note || '').replace('[DEPOSIT-MANAGED]','').trim();
+                              const updated = pgData[selectedPG].map(x =>
+                                (x.name + x.dateJoining) === key
+                                  ? { ...x, note: note ? note + ' [DEPOSIT-MANAGED]' : '[DEPOSIT-MANAGED]' }
+                                  : x
+                              );
+                              const newData = { ...pgData, [selectedPG]: updated };
+                              setPgData(newData);
+                              doPush(newData);
+                              showToast(t.name + ' — deposit managed ✅');
+                            }}
+                            style={{ width: '100%', marginTop: 6, background: '#22c55e18', border: '1px solid #22c55e44', color: '#22c55e', padding: '6px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                            ✅ Owner Managed — Deposit Settled
+                          </button>
+                        )}
                       </div>
                     );
                   })
