@@ -1,3 +1,4 @@
+// v10-pgfix-202604091704
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { MONTHS, PG_COLORS, INITIAL_DATA } from './data.js';
 import { useLocalStorage } from './useStorage.js';
@@ -53,10 +54,11 @@ function isValidPG(name) {
 // Example: joined 01 Apr 2026 → Jan 2026 mein pending nahi dikhna chahiye
 function tenantActiveInMonth(tenant, monthName) {
   if (!tenant.dateJoining) return true;
-  const joinDate  = new Date(tenant.dateJoining);
-  const joinYear  = joinDate.getFullYear();
-  const joinMonth = joinDate.getMonth(); // 0-indexed
-  const joinDay   = joinDate.getDate();
+
+  const joinDate     = new Date(tenant.dateJoining);
+  const joinDay      = joinDate.getDate();
+  const joinYear     = joinDate.getFullYear();
+  const joinMonthIdx = joinDate.getMonth();
 
   const MONTHS_IDX = {
     January:0,February:1,March:2,April:3,May:4,June:5,
@@ -65,36 +67,21 @@ function tenantActiveInMonth(tenant, monthName) {
   const selIdx = MONTHS_IDX[monthName];
   if (selIdx === undefined) return true;
 
-  const now     = new Date();
-  const nowYear = now.getFullYear();
-  const nowMonth= now.getMonth();
-  const nowDay  = now.getDate();
+  const now      = new Date();
+  const nowYear  = now.getFullYear();
+  const nowMonth = now.getMonth();
+  const nowDay   = now.getDate();
 
-  // Past year tenants: always show
-  if (joinYear < nowYear) return true;
-  // Future year joiners: never show
-  if (joinYear > nowYear) return false;
+  if (joinYear > nowYear) return false;   // future year → never show
+  if (joinYear < nowYear) return true;    // past year → always show
 
-  // Same join year as current year:
-  // Tenant joined after selected month → not yet active for that month
-  if (joinMonth > selIdx) return false;
+  // Same year as now:
+  if (joinMonthIdx > selIdx) return false;  // joined after selected month
+  if (joinMonthIdx < selIdx) return true;   // joined before selected month
 
-  // Tenant joined IN THE SAME MONTH as selected month:
-  // Only show if today's date >= joining day (rent cycle started)
-  // Example: joined 22 April, selected April, today 9 April → DON'T show
-  // Example: joined 22 April, selected April, today 25 April → SHOW
-  if (joinMonth === selIdx) {
-    // Selected month is current month or future
-    if (selIdx >= nowMonth) {
-      // Only show if today is on or after joining day
-      return nowDay >= joinDay;
-    }
-    // Selected month is past → always show
-    return true;
-  }
-
-  // Tenant joined before selected month → always active for that month
-  return true;
+  // joinMonthIdx === selIdx (joining month same as selected month)
+  if (selIdx < nowMonth) return true;       // past month → always show
+  return nowDay >= joinDay;                 // current/future month → only if today >= joining day
 }
 const FS = 15; // base font size +1
 
@@ -253,7 +240,7 @@ function TenantInfoModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave
               <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>Kis month se naya rent lagega?</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <select value={newRentFrom} onChange={e => setNewRentFrom(e.target.value)}
-                  style={{ ...S.input, flex: 1, fontSize: 13 }}>
+                  style={{ flex: 1, background: '#0a0f1e', border: '1px solid #1e293b', color: '#e2e8f0', padding: '7px 10px', borderRadius: 8, fontSize: 13, outline: 'none' }}>
                   <option value="">— Month select karo —</option>
                   {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
@@ -866,17 +853,21 @@ export default function App() {
     const joiningDeposit = parseFloat(newTenant.joiningDepositPaid) || 0;
     const joiningTotal   = joiningRent + joiningDeposit;
 
-    if (joiningTotal > 0 && newTenant.dateJoining) {
+    if (newTenant.dateJoining) {
       const joinMonthName = MONTHS[new Date(newTenant.dateJoining).getMonth()];
       const fullRent      = parseFloat(newTenant.rent) || 0;
-      monthly[joinMonthName] = {
-        amount:    String(joiningTotal),
-        halfFull:  newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'),
-        collector: newTenant.joiningCollector || '',
-        note:      joiningDeposit > 0
-                     ? `Rent ₹${joiningRent} + Deposit ₹${joiningDeposit}`
-                     : 'Paid at joining'
-      };
+      // Only put RENT amount in monthly (not deposit)
+      // So rent pending logic works correctly
+      if (joiningRent > 0) {
+        monthly[joinMonthName] = {
+          amount:    String(joiningRent),  // only rent, not deposit
+          halfFull:  newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'),
+          collector: newTenant.joiningCollector || '',
+          note:      joiningDeposit > 0
+                       ? `Deposit paid: ₹${joiningDeposit}`
+                       : 'Rent paid at joining'
+        };
+      }
     }
 
     const { joiningRentAmt, joiningRentHalfFull, joiningDepositPaid, joiningCollector, ...rest } = newTenant;
