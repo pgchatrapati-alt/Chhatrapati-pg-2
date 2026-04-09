@@ -430,7 +430,14 @@ function AnalyticsTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
     return p > 0 && p < r;
   }).length;
   const unpaidCount = activeThisMonth.filter(t => !(parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)).length;
-  const noDepositCount = active.filter(t => !t.deposit || t.deposit === '' || t.deposit === '0').length;
+  const noDepositCount = active.filter(t => {
+    if (String(t.note || '').includes('[DEPOSIT-MANAGED]')) return false;
+    const expected = parseFloat(t.deposit) || 0;
+    const paid     = parseFloat(t.joiningDepositPaid) || 0;
+    if (!t.deposit || t.deposit === '' || t.deposit === '0') return true;
+    if (expected > 0 && paid > 0 && paid < expected) return true;
+    return false;
+  }).length;
 
   const totalCollected = allTenants.reduce((s, t) => s + (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0), 0);
   const totalExpected = activeThisMonth.reduce((s, t) => s + (parseFloat(t.rent) || 0), 0);
@@ -619,7 +626,7 @@ export default function App() {
   const [infoModal, setInfoModal] = useState(null);
   const [payModal, setPayModal] = useState(null);
   const [urlDraft, setUrlDraft] = useState(webAppUrl);
-  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '' });
+  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '' });
   const [pendingTab, setPendingTab] = useState('rent');
 
   const isAdmin = userRole === 'admin';
@@ -761,17 +768,33 @@ export default function App() {
     tenantActiveInMonth(t, selectedMonth) &&
     (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0) < (parseFloat(t.rent) || 0)
   );
-  const depositPending = active.filter(t => !t.deposit || t.deposit === '' || t.deposit === '0');
+  // Deposit pending:
+  // 1. No deposit at all (empty/0)
+  // 2. Half deposit paid (joiningDepositPaid < deposit expected)
+  // 3. Exclude if note contains [DEPOSIT-MANAGED] (owner managed)
+  const depositPending = active.filter(t => {
+    // Owner managed → skip
+    if (String(t.note || '').includes('[DEPOSIT-MANAGED]')) return false;
+    const expected = parseFloat(t.deposit) || 0;
+    const paid     = parseFloat(t.joiningDepositPaid) || 0;
+    // No deposit info at all
+    if (!t.deposit || t.deposit === '' || t.deposit === '0') return true;
+    // Half deposit paid
+    if (expected > 0 && paid > 0 && paid < expected) return true;
+    return false;
+  });
   
-  // FIX 5: Deposit pending 15+ days after joining
+  // Deposit overdue: 15+ days, deposit still pending, not owner-managed
   const depositOverdue = active.filter(t => {
-    const noDeposit = !t.deposit || t.deposit === '' || t.deposit === '0';
-    if (!noDeposit) return false;
+    if (String(t.note || '').includes('[DEPOSIT-MANAGED]')) return false;
+    const expected = parseFloat(t.deposit) || 0;
+    const paid     = parseFloat(t.joiningDepositPaid) || 0;
+    const isPending = (!t.deposit || t.deposit === '' || t.deposit === '0') ||
+                      (expected > 0 && paid > 0 && paid < expected);
+    if (!isPending) return false;
     if (!t.dateJoining) return false;
-    const joined = new Date(t.dateJoining);
-    const today = new Date();
-    const daysSince = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
-    return daysSince >= 15; // 15+ days beet gaye, deposit nahi diya
+    const daysSince = Math.floor((new Date() - new Date(t.dateJoining)) / (1000*60*60*24));
+    return daysSince >= 15;
   });
   const halfPaid = active.filter(t => { const p = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0; const r = parseFloat(t.rent) || 0; return p > 0 && p < r; });
 
@@ -797,13 +820,41 @@ export default function App() {
     await doPush(newData);
   }
 
-  // FIX 3+6: Both admin & viewer can add tenant (prepend = newest on top after sort)
   async function addTenant() {
     if (!newTenant.name.trim()) return showToast('Naam zaroor daalo', 'error');
-    const tenant = { ...newTenant, monthly: emptyMonthly() };
+
+    const monthly = emptyMonthly();
+
+    // Auto-fill joining month payment: rent + deposit combined
+    const joiningRent    = parseFloat(newTenant.joiningRentAmt) || 0;
+    const joiningDeposit = parseFloat(newTenant.joiningDepositPaid) || 0;
+    const joiningTotal   = joiningRent + joiningDeposit;
+
+    if (joiningTotal > 0 && newTenant.dateJoining) {
+      const joinMonthName = MONTHS[new Date(newTenant.dateJoining).getMonth()];
+      const fullRent      = parseFloat(newTenant.rent) || 0;
+      monthly[joinMonthName] = {
+        amount:    String(joiningTotal),
+        halfFull:  newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'),
+        collector: newTenant.joiningCollector || '',
+        note:      joiningDeposit > 0
+                     ? `Rent ₹${joiningRent} + Deposit ₹${joiningDeposit}`
+                     : 'Paid at joining'
+      };
+    }
+
+    const { joiningRentAmt, joiningRentHalfFull, joiningDepositPaid, joiningCollector, ...rest } = newTenant;
+    const tenant = {
+      ...rest,
+      joiningRentAmt:      String(joiningRentAmt || ''),
+      joiningRentHalfFull: String(joiningRentHalfFull || ''),
+      joiningDepositPaid:  String(joiningDepositPaid || ''),
+      monthly
+    };
+
     const newData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
     setPgData(newData);
-    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '' });
+    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '' });
     setShowAddTenant(false);
     showToast('✅ Tenant added!', 'success');
     await doPush(newData);
@@ -1026,22 +1077,56 @@ export default function App() {
                 {depositPending.length === 0
                   ? <div style={{ color: '#22c55e', fontSize: 14, padding: '8px 0' }}>✅ Sab ne deposit de diya!</div>
                   : depositPending.map(t => {
-                    const joined = new Date(t.dateJoining);
-                    const days = t.dateJoining ? Math.floor((new Date() - joined) / (1000*60*60*24)) : 0;
+                    const joined   = new Date(t.dateJoining);
+                    const days     = t.dateJoining ? Math.floor((new Date() - joined) / (1000*60*60*24)) : 0;
                     const isOverdue = days >= 15;
+                    const expected  = parseFloat(t.deposit) || 0;
+                    const paid      = parseFloat(t.joiningDepositPaid) || 0;
+                    const isHalf    = expected > 0 && paid > 0 && paid < expected;
+                    const remaining = expected - paid;
                     return (
-                      <div key={t.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #1e293b', alignItems: 'flex-start' }}>
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
-                          <div style={{ fontSize: 12, color: '#64748b' }}>{fmtDate(t.dateJoining)} • {days} din {isOverdue ? '🔴' : '🟡'}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 700, fontSize: 12 }}>{isOverdue ? 'Overdue!' : 'Pending'}</div>
-                          {t.contact && (
-                            <a href={waLink(t.contact, waDepositMsg(t.name, days))} target="_blank" rel="noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              style={{ fontSize: 11, color: '#25d366', textDecoration: 'none', fontWeight: 700, marginTop: 3, display: 'block' }}>💬 Remind</a>
-                          )}
+                      <div key={t.name} style={{ padding: '9px 0', borderBottom: '1px solid #1e293b' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>{fmtDate(t.dateJoining)} • {days} din {isOverdue ? '🔴' : '🟡'}</div>
+                            {isHalf && (
+                              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>
+                                Half paid: ₹{fmtNum(paid)} / ₹{fmtNum(expected)} • Baaki: ₹{fmtNum(remaining)}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 700, fontSize: 12 }}>
+                              {isHalf ? 'Half Paid' : isOverdue ? 'Overdue!' : 'Pending'}
+                            </div>
+                            {t.contact && (
+                              <a href={waLink(t.contact, waDepositMsg(t.name, days))} target="_blank" rel="noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                style={{ fontSize: 11, color: '#25d366', textDecoration: 'none', fontWeight: 700 }}>💬 Remind</a>
+                            )}
+                            {/* Owner Managed button — removes from pending list */}
+                            {isAdmin && (
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  const key = t.name + t.dateJoining;
+                                  const note = String(t.note || '').replace('[DEPOSIT-MANAGED]','').trim();
+                                  const updated = pgData[selectedPG].map(x =>
+                                    (x.name + x.dateJoining) === key
+                                      ? { ...x, note: note ? note + ' [DEPOSIT-MANAGED]' : '[DEPOSIT-MANAGED]' }
+                                      : x
+                                  );
+                                  const newData = { ...pgData, [selectedPG]: updated };
+                                  setPgData(newData);
+                                  doPush(newData);
+                                  showToast(t.name + ' — deposit managed ✅');
+                                }}
+                                style={{ fontSize: 10, background: '#22c55e22', border: '1px solid #22c55e44', color: '#22c55e', padding: '3px 8px', borderRadius: 6, cursor: 'pointer', fontWeight: 700 }}>
+                                ✅ Owner Managed
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1100,7 +1185,17 @@ export default function App() {
                       <Input label="Rent Paid ₹" value={newTenant.joiningRentAmt} onChange={v => setNewTenant(p => ({ ...p, joiningRentAmt: v }))} />
                       <Sel label="Full/Half" value={newTenant.joiningRentHalfFull} onChange={v => setNewTenant(p => ({ ...p, joiningRentHalfFull: v }))} options={['Full', 'Half']} />
                     </div>
-                    <Input label="Deposit Paid ₹" value={newTenant.joiningDepositPaid} onChange={v => setNewTenant(p => ({ ...p, joiningDepositPaid: v }))} />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Input label="Deposit Paid ₹" value={newTenant.joiningDepositPaid} onChange={v => setNewTenant(p => ({ ...p, joiningDepositPaid: v }))} />
+                      <Sel label="Collector Name" value={newTenant.joiningCollector} onChange={v => setNewTenant(p => ({ ...p, joiningCollector: v }))} options={COLLECTORS} />
+                    </div>
+                    {/* Live preview of combined amount */}
+                    {(parseFloat(newTenant.joiningRentAmt)||0) + (parseFloat(newTenant.joiningDepositPaid)||0) > 0 && (
+                      <div style={{ marginTop: 8, background: '#0a0f1e', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
+                        ✅ Joining month mein enter hoga: ₹{fmtNum((parseFloat(newTenant.joiningRentAmt)||0) + (parseFloat(newTenant.joiningDepositPaid)||0))}
+                        {newTenant.joiningDepositPaid && ` (Rent ₹${fmtNum(parseFloat(newTenant.joiningRentAmt)||0)} + Deposit ₹${fmtNum(parseFloat(newTenant.joiningDepositPaid)||0)})`}
+                      </div>
+                    )}
                   </div>
 
                   <button onClick={addTenant}
