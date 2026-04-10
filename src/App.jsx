@@ -651,6 +651,7 @@ export default function App() {
   const [urlDraft, setUrlDraft] = useState(webAppUrl);
   const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '' });
   const [pendingTab, setPendingTab] = useState('rent');
+  const [depositInputs, setDepositInputs] = useState({}); // name -> amount being entered
 
   const isAdmin = userRole === 'admin';
   const isViewer = userRole === 'viewer';
@@ -1136,28 +1137,45 @@ export default function App() {
                         </div>
                         {isAdmin && (
                           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                            <button
-                              onClick={e => {
-                                e.stopPropagation();
-                                const amt = window.prompt(
-                                  t.name + ' — Deposit kitna mila? (Expected: Rs.' + fmtNum(expected || 0) + ')',
-                                  String(remaining > 0 ? remaining : (expected || ''))
-                                );
-                                if (!amt || isNaN(parseFloat(amt))) return;
-                                const key = t.name + t.dateJoining;
-                                const totalPaidNow = paid + parseFloat(amt);
-                                const updated = pgData[selectedPG].map(x =>
-                                  (x.name + x.dateJoining) === key
-                                    ? { ...x, joiningDepositPaid: String(totalPaidNow) }
-                                    : x
-                                );
-                                const newData = { ...pgData, [selectedPG]: updated };
-                                setPgData(newData); doPush(newData);
-                                showToast(t.name + ' — Rs.' + fmtNum(parseFloat(amt)) + ' deposit received!');
-                              }}
-                              style={{ flex: 1, background: '#22c55e', border: 'none', color: '#fff', padding: '7px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
-                              💰 Deposit Received
-                            </button>
+                            {depositInputs[t.name] !== undefined ? (
+                              <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+                                <input
+                                  type="number"
+                                  value={depositInputs[t.name]}
+                                  onChange={e => setDepositInputs(p => ({ ...p, [t.name]: e.target.value }))}
+                                  placeholder={'Rs.' + fmtNum(remaining > 0 ? remaining : (expected || 0))}
+                                  style={{ flex: 1, background: '#0a0f1e', border: '1px solid #22c55e', color: '#e2e8f0', padding: '6px 8px', borderRadius: 7, fontSize: 12, outline: 'none' }}
+                                  onClick={e => e.stopPropagation()}
+                                />
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    const amt = parseFloat(depositInputs[t.name]);
+                                    if (!amt || isNaN(amt)) return;
+                                    const key = t.name + t.dateJoining;
+                                    const totalPaidNow = paid + amt;
+                                    const updated = pgData[selectedPG].map(x =>
+                                      (x.name + x.dateJoining) === key
+                                        ? { ...x, joiningDepositPaid: String(totalPaidNow) }
+                                        : x
+                                    );
+                                    const newData = { ...pgData, [selectedPG]: updated };
+                                    setPgData(newData); doPush(newData);
+                                    setDepositInputs(p => { const n = {...p}; delete n[t.name]; return n; });
+                                    showToast(t.name + ' — deposit received!');
+                                  }}
+                                  style={{ background: '#22c55e', border: 'none', color: '#fff', padding: '6px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>✓</button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setDepositInputs(p => { const n = {...p}; delete n[t.name]; return n; }); }}
+                                  style={{ background: '#1e293b', border: 'none', color: '#94a3b8', padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 11 }}>✕</button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={e => { e.stopPropagation(); setDepositInputs(p => ({ ...p, [t.name]: '' })); }}
+                                style={{ flex: 1, background: '#22c55e', border: 'none', color: '#fff', padding: '7px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                                💰 Deposit Received
+                              </button>
+                            )}
                             <button
                               onClick={e => {
                                 e.stopPropagation();
