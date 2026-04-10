@@ -1134,26 +1134,48 @@ export default function App() {
                             )}
                           </div>
                         </div>
-                        {/* FIX 2: Owner Managed — full width, below, away from remind */}
                         {isAdmin && (
-                          <button
-                            onClick={e => {
-                              e.stopPropagation();
-                              const key = t.name + t.dateJoining;
-                              const note = String(t.note || '').replace('[DEPOSIT-MANAGED]','').trim();
-                              const updated = pgData[selectedPG].map(x =>
-                                (x.name + x.dateJoining) === key
-                                  ? { ...x, note: note ? note + ' [DEPOSIT-MANAGED]' : '[DEPOSIT-MANAGED]' }
-                                  : x
-                              );
-                              const newData = { ...pgData, [selectedPG]: updated };
-                              setPgData(newData);
-                              doPush(newData);
-                              showToast(t.name + ' — deposit managed ✅');
-                            }}
-                            style={{ width: '100%', marginTop: 6, background: '#22c55e18', border: '1px solid #22c55e44', color: '#22c55e', padding: '6px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
-                            ✅ Owner Managed — Deposit Settled
-                          </button>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                const amt = window.prompt(
+                                  t.name + ' — Deposit kitna mila? (Expected: Rs.' + fmtNum(expected || 0) + ')',
+                                  String(remaining > 0 ? remaining : (expected || ''))
+                                );
+                                if (!amt || isNaN(parseFloat(amt))) return;
+                                const key = t.name + t.dateJoining;
+                                const totalPaidNow = paid + parseFloat(amt);
+                                const updated = pgData[selectedPG].map(x =>
+                                  (x.name + x.dateJoining) === key
+                                    ? { ...x, joiningDepositPaid: String(totalPaidNow) }
+                                    : x
+                                );
+                                const newData = { ...pgData, [selectedPG]: updated };
+                                setPgData(newData); doPush(newData);
+                                showToast(t.name + ' — Rs.' + fmtNum(parseFloat(amt)) + ' deposit received!');
+                              }}
+                              style={{ flex: 1, background: '#22c55e', border: 'none', color: '#fff', padding: '7px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                              💰 Deposit Received
+                            </button>
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                const key = t.name + t.dateJoining;
+                                const note = String(t.note || '').replace('[DEPOSIT-MANAGED]','').trim();
+                                const updated = pgData[selectedPG].map(x =>
+                                  (x.name + x.dateJoining) === key
+                                    ? { ...x, note: note ? note + ' [DEPOSIT-MANAGED]' : '[DEPOSIT-MANAGED]' }
+                                    : x
+                                );
+                                const newData = { ...pgData, [selectedPG]: updated };
+                                setPgData(newData); doPush(newData);
+                                showToast(t.name + ' — deposit managed!');
+                              }}
+                              style={{ flex: 1, background: '#6366f122', border: '1px solid #6366f144', color: '#818cf8', padding: '7px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                              ✅ Owner Managed
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
