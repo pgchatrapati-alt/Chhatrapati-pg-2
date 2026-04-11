@@ -30,7 +30,7 @@ function handleRequest(e) {
 var DATA_START = 6; // rows 1-5 user ka fixed area, row 6 se tenant data
 var MONTHS = ["January","February","March","April","May","June",
               "July","August","September","October","November","December"];
-var NCOLS = 58; // 7 + 12*4 + 3 joining cols (BC=joining rent amt, BD=joining rent half/full, BE=joining deposit paid)
+var NCOLS = 59; // 7 + 12*4 + 4 joining cols (BD=rent amt, BE=halfFull, BF=deposit paid, BG=deposit collector)
 
 // ── READ ──────────────────────────────────────────────────────
 function readAllData() {
@@ -61,7 +61,8 @@ function readAllData() {
         note: String(row[6]||""), monthly: {},
         joiningRentAmt:      String(row[55]||""),  // BD
         joiningRentHalfFull: String(row[56]||""),  // BE
-        joiningDepositPaid:  String(row[57]||"")   // BF
+        joiningDepositPaid:  String(row[57]||""),  // BF
+        depositCollector:    String(row[58]||"")    // BG
       };
       MONTHS.forEach(function(m, i) {
         var b = 7 + i*4;
@@ -163,11 +164,12 @@ function buildRow(t, ex, isLeft) {
       s(md.note,      ex[b+3])
     );
   });
-  // Cols 56,57,58 (BD,BE,BF): joining payment info
+  // Cols 56-59 (BD,BE,BF,BG): joining payment info
   row.push(
     s(t.joiningRentAmt,      ex[55]),  // BD: rent paid at joining
     s(t.joiningRentHalfFull, ex[56]),  // BE: full/half
-    s(t.joiningDepositPaid,  ex[57])   // BF: deposit paid at joining
+    s(t.joiningDepositPaid,  ex[57]),  // BF: deposit paid at joining
+    s(t.depositCollector,    ex[58])   // BG: deposit collector
   );
   return row;
 }

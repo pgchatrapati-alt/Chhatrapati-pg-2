@@ -680,7 +680,7 @@ export default function App() {
   const [infoModal, setInfoModal] = useState(null);
   const [payModal, setPayModal] = useState(null);
   const [urlDraft, setUrlDraft] = useState(webAppUrl);
-  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '' });
+  const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '', depositCollector: '' });
   const [pendingTab, setPendingTab] = useState('rent');
   const [depositInputs, setDepositInputs] = useState({}); // name -> amount being entered
 
@@ -899,28 +899,30 @@ export default function App() {
       // Store ONLY rent in monthly (not deposit)
       // deposit is stored separately in joiningDepositPaid
       // This ensures rentPending filter works correctly (amount vs rent)
+      // Rent only in amount — deposit goes in note separately
       monthly[joinMonthName] = {
-        amount:    String(joiningRent > 0 ? joiningRent : joiningDeposit),
-        halfFull:  joiningRent > 0
-                     ? (newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'))
-                     : 'Full',
+        amount:    String(joiningRent),   // ONLY rent
+        halfFull:  newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'),
         collector: newTenant.joiningCollector || '',
-        note:      autoNote
+        note:      joiningDeposit > 0
+                     ? `Deposit ₹${joiningDeposit} collected${newTenant.depositCollector ? ' by ' + newTenant.depositCollector : ''}`
+                     : ''
       };
     }
 
-    const { joiningRentAmt, joiningRentHalfFull, joiningDepositPaid, joiningCollector, ...rest } = newTenant;
+    const { joiningRentAmt, joiningRentHalfFull, joiningDepositPaid, joiningCollector, depositCollector, ...rest } = newTenant;
     const tenant = {
       ...rest,
       joiningRentAmt:      String(joiningRentAmt || ''),
       joiningRentHalfFull: String(joiningRentHalfFull || ''),
       joiningDepositPaid:  String(joiningDepositPaid || ''),
+      depositCollector:    String(depositCollector || ''),
       monthly
     };
 
     const newData = { ...pgData, [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] };
     setPgData(newData);
-    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '' });
+    setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '', depositCollector: '' });
     setShowAddTenant(false);
     showToast('✅ Tenant added!', 'success');
     await doPush(newData);
@@ -1218,11 +1220,11 @@ export default function App() {
                                       // Update joining month: add deposit to existing amount
                                       if (joinMonthName) {
                                         const existingMonthly = JSON.parse(JSON.stringify(x.monthly || {}));
-                                        const existingAmt = parseFloat(existingMonthly[joinMonthName]?.amount) || 0;
                                         const existingNote = existingMonthly[joinMonthName]?.note || '';
+                                        // Amount = ONLY rent (don't add deposit to amount)
+                                        // Just update note with deposit info
                                         existingMonthly[joinMonthName] = {
                                           ...existingMonthly[joinMonthName],
-                                          amount: String(existingAmt + amt),
                                           note: existingNote
                                             ? existingNote + ` + Deposit ₹${amt}`
                                             : `Deposit ₹${amt} received`
@@ -1326,7 +1328,10 @@ export default function App() {
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Input label="Deposit Paid ₹" value={newTenant.joiningDepositPaid} onChange={v => setNewTenant(p => ({ ...p, joiningDepositPaid: v }))} />
-                      <Sel label="Collector Name" value={newTenant.joiningCollector} onChange={v => setNewTenant(p => ({ ...p, joiningCollector: v }))} options={COLLECTORS} />
+                      <Sel label="Deposit Collector" value={newTenant.depositCollector} onChange={v => setNewTenant(p => ({ ...p, depositCollector: v }))} options={COLLECTORS} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Sel label="Rent Collector" value={newTenant.joiningCollector} onChange={v => setNewTenant(p => ({ ...p, joiningCollector: v }))} options={COLLECTORS} />
                     </div>
                     {/* Live preview of combined amount */}
                     {(parseFloat(newTenant.joiningRentAmt)||0) + (parseFloat(newTenant.joiningDepositPaid)||0) > 0 && (
