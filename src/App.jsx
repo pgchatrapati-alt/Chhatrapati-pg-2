@@ -51,14 +51,18 @@ function isValidPG(name) {
 
 // FIX 1: Tenant kisi month ke liye active hai?
 // Agar tenant ka joining date uss month ke baad hai → wo pending nahi hai
-// Example: joined 01 Apr 2026 → Jan 2026 mein pending nahi dikhna chahiye
+// tenantActiveInMonth: show in pending only if rent cycle has started
+// Rule: rent cycle starts on joining DAY every month
+// Example: joined 25 Jul 2024, April selected, today 9 Apr → 9 < 25 → DON'T show
+// Example: joined 25 Jul 2024, April selected, today 26 Apr → 26 >= 25 → SHOW
+// Example: joined 25 Jul 2024, March selected (past) → always show
 function tenantActiveInMonth(tenant, monthName) {
   if (!tenant.dateJoining) return true;
 
   const joinDate     = new Date(tenant.dateJoining);
-  const joinDay      = joinDate.getDate();
+  const joinDay      = joinDate.getDate();   // e.g. 25
   const joinYear     = joinDate.getFullYear();
-  const joinMonthIdx = joinDate.getMonth();
+  const joinMonthIdx = joinDate.getMonth();  // 0-indexed
 
   const MONTHS_IDX = {
     January:0,February:1,March:2,April:3,May:4,June:5,
@@ -72,16 +76,23 @@ function tenantActiveInMonth(tenant, monthName) {
   const nowMonth = now.getMonth();
   const nowDay   = now.getDate();
 
-  if (joinYear > nowYear) return false;   // future year → never show
-  if (joinYear < nowYear) return true;    // past year → always show
+  // Tenant joined in future year → never show
+  if (joinYear > nowYear) return false;
 
-  // Same year as now:
-  if (joinMonthIdx > selIdx) return false;  // joined after selected month
-  if (joinMonthIdx < selIdx) return true;   // joined before selected month
+  // Selected month is in the past (already gone this year or previous year)
+  // → always show (rent was definitely due)
+  const selIsPast = (selIdx < nowMonth) || 
+                    (joinYear < nowYear && selIdx <= nowMonth);
+  if (selIsPast) return true;
 
-  // joinMonthIdx === selIdx (joining month same as selected month)
-  if (selIdx < nowMonth) return true;       // past month → always show
-  return nowDay >= joinDay;                 // current/future month → only if today >= joining day
+  // Selected month is current month (selIdx === nowMonth, same year)
+  // → show only if today >= joining day (cycle has started)
+  if (selIdx === nowMonth) {
+    return nowDay >= joinDay;
+  }
+
+  // Selected month is future → don't show yet
+  return false;
 }
 const FS = 15; // base font size +1
 
@@ -333,6 +344,19 @@ function TenantPaymentModal({ tenant, selectedPG, pgColor, onClose, onSave }) {
                   <Sel label="Half/Full" value={md.halfFull} onChange={v => setM(m, 'halfFull', v)} options={['Full', 'Half']} />
                   <Sel label="Collector" value={md.collector} onChange={v => setM(m, 'collector', v)} options={COLLECTORS} />
                   <Input label="Note" value={md.note} onChange={v => setM(m, 'note', v)} />
+                </div>
+                {/* Quick fill buttons */}
+                <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
+                  <button onClick={() => setM(m, 'amount', String(rent))}
+                    style={{ fontSize: 10, background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', padding: '3px 8px', borderRadius: 5, cursor: 'pointer' }}>
+                    Rent ₹{fmtNum(rent)}
+                  </button>
+                  {parseFloat(form.deposit) > 0 && (
+                    <button onClick={() => { setM(m, 'amount', String(rent + parseFloat(form.deposit))); setM(m, 'note', 'Rent+Deposit'); }}
+                      style={{ fontSize: 10, background: '#6366f122', border: '1px solid #6366f144', color: '#818cf8', padding: '3px 8px', borderRadius: 5, cursor: 'pointer' }}>
+                      Rent+Deposit ₹{fmtNum(rent + parseFloat(form.deposit))}
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -1024,26 +1048,43 @@ export default function App() {
                     ₹{fmtNum(rentPending.reduce((s, t) => s + ((parseFloat(t.rent) || 0) - (parseFloat(t.monthly?.[selectedMonth]?.amount) || 0)), 0))} due
                   </span>
                 </div>
-                {/* FIX 5: Send All Rent Reminders button */}
-                {rentPending.filter(t => t.contact).length > 0 && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 5 }}>
-                      💡 Ek ek karke WhatsApp open hoga — har ek ke liye Send dabao
+                {/* Remind today's cycle tenants — only those whose joinDay = today */}
+                {(() => {
+                  const todayDay = new Date().getDate();
+                  const todayDue = rentPending.filter(t =>
+                    t.contact && t.dateJoining &&
+                    new Date(t.dateJoining).getDate() === todayDay
+                  );
+                  const allWithContact = rentPending.filter(t => t.contact);
+                  return (
+                    <div style={{ marginBottom: 10 }}>
+                      {todayDue.length > 0 && (
+                        <div style={{ background: '#f59e0b18', border: '1px solid #f59e0b44', borderRadius: 8, padding: '8px 12px', marginBottom: 6 }}>
+                          <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 700, marginBottom: 4 }}>
+                            🔔 Aaj {todayDay} tarikh — {todayDue.length} tenant ka rent cycle aaj se shuru!
+                          </div>
+                          {todayDue.map(t => (
+                            <div key={t.name} style={{ fontSize: 11, color: '#94a3b8' }}>• {t.name}</div>
+                          ))}
+                        </div>
+                      )}
+                      {allWithContact.length > 0 && (
+                        <button
+                          onClick={() => {
+                            allWithContact.forEach((t, i) => {
+                              const due = fmtNum((parseFloat(t.rent)||0)-(parseFloat(t.monthly?.[selectedMonth]?.amount)||0));
+                              setTimeout(() => {
+                                window.open(waLink(t.contact, waRentMsg(t.name, selectedMonth, due)), '_blank');
+                              }, i * 800);
+                            });
+                          }}
+                          style={{ width: '100%', background: '#25d36622', border: '1px solid #25d36655', color: '#25d366', padding: '9px', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                          💬 Send Reminders to All Pending ({allWithContact.length})
+                        </button>
+                      )}
                     </div>
-                    <button
-                      onClick={() => {
-                        rentPending.filter(t => t.contact).forEach((t, i) => {
-                          const due = fmtNum((parseFloat(t.rent)||0)-(parseFloat(t.monthly?.[selectedMonth]?.amount)||0));
-                          setTimeout(() => {
-                            window.open(waLink(t.contact, waRentMsg(t.name, selectedMonth, due)), '_blank');
-                          }, i * 800); // 800ms gap between each
-                        });
-                      }}
-                      style={{ width: '100%', background: '#25d36622', border: '1px solid #25d36655', color: '#25d366', padding: '9px', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
-                      💬 Send All Rent Reminders ({rentPending.filter(t => t.contact).length})
-                    </button>
-                  </div>
-                )}
+                  );
+                })()}
                 {rentPending.length === 0
                   ? <div style={{ color: '#22c55e', fontSize: 14, padding: '8px 0' }}>✅ Sab ne rent de diya!</div>
                   : rentPending.map(t => {
