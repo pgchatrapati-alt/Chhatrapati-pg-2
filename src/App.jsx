@@ -51,18 +51,17 @@ function isValidPG(name) {
 
 // FIX 1: Tenant kisi month ke liye active hai?
 // Agar tenant ka joining date uss month ke baad hai → wo pending nahi hai
-// tenantActiveInMonth: show in pending only if rent cycle has started
-// Rule: rent cycle starts on joining DAY every month
-// Example: joined 25 Jul 2024, April selected, today 9 Apr → 9 < 25 → DON'T show
-// Example: joined 25 Jul 2024, April selected, today 26 Apr → 26 >= 25 → SHOW
-// Example: joined 25 Jul 2024, March selected (past) → always show
+// tenantActiveInMonth: should this tenant appear as pending for given month?
+// Logic: tenant's rent cycle starts on joinDay every month
+// e.g. joined 25 Jul → rent due on 25th of every month
+// If selected month hasn't reached joinDay yet → don't show
 function tenantActiveInMonth(tenant, monthName) {
   if (!tenant.dateJoining) return true;
 
   const joinDate     = new Date(tenant.dateJoining);
-  const joinDay      = joinDate.getDate();   // e.g. 25
-  const joinYear     = joinDate.getFullYear();
-  const joinMonthIdx = joinDate.getMonth();  // 0-indexed
+  const joinDay      = joinDate.getDate();       // e.g. 25
+  const joinYear     = joinDate.getFullYear();   // e.g. 2024
+  const joinMonthIdx = joinDate.getMonth();      // e.g. 6 (July)
 
   const MONTHS_IDX = {
     January:0,February:1,March:2,April:3,May:4,June:5,
@@ -76,20 +75,18 @@ function tenantActiveInMonth(tenant, monthName) {
   const nowMonth = now.getMonth();
   const nowDay   = now.getDate();
 
-  // Tenant joined in future year → never show
+  // Tenant hasn't joined yet (future year) → never show
   if (joinYear > nowYear) return false;
 
-  // Selected month is in the past (already gone this year or previous year)
-  // → always show (rent was definitely due)
-  const selIsPast = (selIdx < nowMonth) || 
-                    (joinYear < nowYear && selIdx <= nowMonth);
-  if (selIsPast) return true;
+  // Tenant joined this year → selected month must be >= joining month
+  // e.g. joined Apr 2026, selected March → don't show (March is before April)
+  if (joinYear === nowYear && selIdx < joinMonthIdx) return false;
 
-  // Selected month is current month (selIdx === nowMonth, same year)
-  // → show only if today >= joining day (cycle has started)
-  if (selIdx === nowMonth) {
-    return nowDay >= joinDay;
-  }
+  // Selected month is in the past (before current month) → always show
+  if (selIdx < nowMonth) return true;
+
+  // Selected month is current month → check if joinDay has passed today
+  if (selIdx === nowMonth) return nowDay >= joinDay;
 
   // Selected month is future → don't show yet
   return false;
@@ -288,9 +285,10 @@ function TenantInfoModal({ tenant, selectedPG, pgColor, isAdmin, onClose, onSave
 }
 
 // ── Payment Modal (Monthly tab click, admin only) ─────────────
-function TenantPaymentModal({ tenant, selectedPG, pgColor, onClose, onSave }) {
+function TenantPaymentModal({ tenant, selectedPG, pgColor, onClose, onSave, focusMonth }) {
   const [form, setForm] = useState({ ...tenant });
   const [monthly, setMonthly] = useState(JSON.parse(JSON.stringify(tenant.monthly || emptyMonthly())));
+  const [expandedMonth, setExpandedMonth] = useState(focusMonth || null);
   const setM = (m, f, v) => setMonthly(p => ({ ...p, [m]: { ...p[m], [f]: v } }));
   const totalPaid = MONTHS.reduce((s, m) => s + (parseFloat(monthly[m]?.amount) || 0), 0);
   const isActive = !tenant.dateLeaving || new Date(tenant.dateLeaving) >= new Date();
@@ -331,33 +329,42 @@ function TenantPaymentModal({ tenant, selectedPG, pgColor, onClose, onSave }) {
             const md = monthly[m] || { amount: '', halfFull: '', collector: '', note: '' };
             const paid = parseFloat(md.amount) || 0;
             const rent = parseFloat(form.rent) || 0;
+            const dep  = parseFloat(form.deposit) || 0;
             const tc = paid === 0 ? '#475569' : paid < rent ? '#f59e0b' : pgColor;
             const bc = paid === 0 ? '#1e293b' : paid < rent ? '#f59e0b44' : `${pgColor}44`;
+            const isExpanded = expandedMonth === m;
             return (
               <div key={m} style={{ background: '#0a0f1e', borderRadius: 10, padding: '10px 12px', border: `1px solid ${bc}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+                  onClick={() => setExpandedMonth(isExpanded ? null : m)}>
                   <span style={{ fontWeight: 700, fontSize: 14, color: tc }}>{m}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: tc }}>{paid > 0 ? `₹${fmtNum(paid)}${paid < rent ? ' (Half)' : ' ✓'}` : 'Not Paid'}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: tc }}>
+                    {paid > 0 ? `₹${fmtNum(paid)}${paid < rent ? ' (Half)' : ' ✓'}` : 'Not Paid'}
+                    <span style={{ marginLeft: 8, fontSize: 11, color: '#475569' }}>{isExpanded ? '▲' : '▼'}</span>
+                  </span>
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <Input label="₹ Amount" value={md.amount} onChange={v => setM(m, 'amount', v)} />
-                  <Sel label="Half/Full" value={md.halfFull} onChange={v => setM(m, 'halfFull', v)} options={['Full', 'Half']} />
-                  <Sel label="Collector" value={md.collector} onChange={v => setM(m, 'collector', v)} options={COLLECTORS} />
-                  <Input label="Note" value={md.note} onChange={v => setM(m, 'note', v)} />
-                </div>
-                {/* Quick fill buttons */}
-                <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
-                  <button onClick={() => setM(m, 'amount', String(rent))}
-                    style={{ fontSize: 10, background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', padding: '3px 8px', borderRadius: 5, cursor: 'pointer' }}>
-                    Rent ₹{fmtNum(rent)}
-                  </button>
-                  {parseFloat(form.deposit) > 0 && (
-                    <button onClick={() => { setM(m, 'amount', String(rent + parseFloat(form.deposit))); setM(m, 'note', 'Rent+Deposit'); }}
-                      style={{ fontSize: 10, background: '#6366f122', border: '1px solid #6366f144', color: '#818cf8', padding: '3px 8px', borderRadius: 5, cursor: 'pointer' }}>
-                      Rent+Deposit ₹{fmtNum(rent + parseFloat(form.deposit))}
-                    </button>
-                  )}
-                </div>
+                {isExpanded && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <Input label="₹ Amount" value={md.amount} onChange={v => setM(m, 'amount', v)} />
+                      <Sel label="Half/Full" value={md.halfFull} onChange={v => setM(m, 'halfFull', v)} options={['Full', 'Half']} />
+                      <Sel label="Collector" value={md.collector} onChange={v => setM(m, 'collector', v)} options={COLLECTORS} />
+                      <Input label="Note" value={md.note} onChange={v => setM(m, 'note', v)} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
+                      <button onClick={() => { setM(m,'amount',String(rent)); setM(m,'halfFull','Full'); }}
+                        style={{ fontSize: 11, background: pgColor+'33', border: `1px solid ${pgColor}55`, color: pgColor, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 700 }}>
+                        ✓ Rent ₹{fmtNum(rent)}
+                      </button>
+                      {dep > 0 && (
+                        <button onClick={() => { setM(m,'amount',String(rent+dep)); setM(m,'halfFull','Full'); setM(m,'note','Rent+Deposit'); }}
+                          style={{ fontSize: 11, background: '#6366f133', border: '1px solid #6366f155', color: '#818cf8', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 700 }}>
+                          ✓ Rent+Deposit ₹{fmtNum(rent+dep)}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -878,21 +885,23 @@ export default function App() {
     const joiningDeposit = parseFloat(newTenant.joiningDepositPaid) || 0;
     const joiningTotal   = joiningRent + joiningDeposit;
 
-    if (newTenant.dateJoining) {
+    if (newTenant.dateJoining && (joiningRent > 0 || joiningDeposit > 0)) {
       const joinMonthName = MONTHS[new Date(newTenant.dateJoining).getMonth()];
       const fullRent      = parseFloat(newTenant.rent) || 0;
-      // Only put RENT amount in monthly (not deposit)
-      // So rent pending logic works correctly
-      if (joiningRent > 0) {
-        monthly[joinMonthName] = {
-          amount:    String(joiningRent),  // only rent, not deposit
-          halfFull:  newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'),
-          collector: newTenant.joiningCollector || '',
-          note:      joiningDeposit > 0
-                       ? `Deposit paid: ₹${joiningDeposit}`
-                       : 'Rent paid at joining'
-        };
-      }
+      // Amount = rent + deposit combined (as user asked)
+      const totalAmt = joiningRent + joiningDeposit;
+      // Note: auto-describe what was paid
+      let autoNote = '';
+      if (joiningRent > 0 && joiningDeposit > 0) autoNote = `Rent ₹${joiningRent} + Deposit ₹${joiningDeposit}`;
+      else if (joiningDeposit > 0) autoNote = `Deposit ₹${joiningDeposit}`;
+      else autoNote = 'Rent paid at joining';
+
+      monthly[joinMonthName] = {
+        amount:    String(totalAmt),
+        halfFull:  newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'),
+        collector: newTenant.joiningCollector || '',
+        note:      autoNote
+      };
     }
 
     const { joiningRentAmt, joiningRentHalfFull, joiningDepositPaid, joiningCollector, ...rest } = newTenant;
@@ -1411,7 +1420,7 @@ export default function App() {
 
       {/* Modals */}
       {infoModal && <TenantInfoModal tenant={infoModal} selectedPG={selectedPG} pgColor={pgColor} isAdmin={isAdmin} onClose={() => setInfoModal(null)} onSave={saveInfo} />}
-      {payModal && <TenantPaymentModal tenant={payModal} selectedPG={selectedPG} pgColor={pgColor} onClose={() => setPayModal(null)} onSave={savePay} />}
+      {payModal && <TenantPaymentModal tenant={payModal} selectedPG={selectedPG} pgColor={pgColor} onClose={() => setPayModal(null)} onSave={savePay} focusMonth={selectedMonth} />}
 
       <Toast toast={toast} />
 
