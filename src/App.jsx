@@ -896,9 +896,14 @@ export default function App() {
       else if (joiningDeposit > 0) autoNote = `Deposit ₹${joiningDeposit}`;
       else autoNote = 'Rent paid at joining';
 
+      // Store ONLY rent in monthly (not deposit)
+      // deposit is stored separately in joiningDepositPaid
+      // This ensures rentPending filter works correctly (amount vs rent)
       monthly[joinMonthName] = {
-        amount:    String(totalAmt),
-        halfFull:  newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'),
+        amount:    String(joiningRent > 0 ? joiningRent : joiningDeposit),
+        halfFull:  joiningRent > 0
+                     ? (newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'))
+                     : 'Full',
         collector: newTenant.joiningCollector || '',
         note:      autoNote
       };
@@ -1203,16 +1208,33 @@ export default function App() {
                                     const amt = parseFloat(depositInputs[t.name]);
                                     if (!amt || isNaN(amt)) return;
                                     const key = t.name + t.dateJoining;
-                                    const totalPaidNow = paid + amt;
-                                    const updated = pgData[selectedPG].map(x =>
-                                      (x.name + x.dateJoining) === key
-                                        ? { ...x, joiningDepositPaid: String(totalPaidNow) }
-                                        : x
-                                    );
+                                    const totalDepPaid = paid + amt;
+                                    // Also update joining month in monthly data
+                                    const joinMonthName = t.dateJoining
+                                      ? MONTHS[new Date(t.dateJoining).getMonth()] : null;
+                                    const updated = pgData[selectedPG].map(x => {
+                                      if ((x.name + x.dateJoining) !== key) return x;
+                                      const newX = { ...x, joiningDepositPaid: String(totalDepPaid) };
+                                      // Update joining month: add deposit to existing amount
+                                      if (joinMonthName) {
+                                        const existingMonthly = JSON.parse(JSON.stringify(x.monthly || {}));
+                                        const existingAmt = parseFloat(existingMonthly[joinMonthName]?.amount) || 0;
+                                        const existingNote = existingMonthly[joinMonthName]?.note || '';
+                                        existingMonthly[joinMonthName] = {
+                                          ...existingMonthly[joinMonthName],
+                                          amount: String(existingAmt + amt),
+                                          note: existingNote
+                                            ? existingNote + ` + Deposit ₹${amt}`
+                                            : `Deposit ₹${amt} received`
+                                        };
+                                        newX.monthly = existingMonthly;
+                                      }
+                                      return newX;
+                                    });
                                     const newData = { ...pgData, [selectedPG]: updated };
                                     setPgData(newData); doPush(newData);
                                     setDepositInputs(p => { const n = {...p}; delete n[t.name]; return n; });
-                                    showToast(t.name + ' — deposit received!');
+                                    showToast(t.name + ' — ₹' + fmtNum(amt) + ' deposit received + month updated!');
                                   }}
                                   style={{ background: '#22c55e', border: 'none', color: '#fff', padding: '6px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>✓</button>
                                 <button
