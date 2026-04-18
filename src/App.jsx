@@ -872,19 +872,25 @@ export default function App() {
     const key = infoModal.name + infoModal.dateJoining;
     const updated = pgData[selectedPG].map(t => (t.name + t.dateJoining) === key ? updatedTenant : t);
     const newData = { ...pgData, [selectedPG]: updated };
-    setPgData(newData); setInfoModal(null);
-    await doPush(newData);
+    setPgData(newData); setInfoModal(null);  // instant UI update
+    showToast('✅ Saved!');
+    doPush(newData, true);  // background push, no await
   }
   async function savePay(updatedTenant) {
     const key = payModal.name + payModal.dateJoining;
     const updated = pgData[selectedPG].map(t => (t.name + t.dateJoining) === key ? updatedTenant : t);
     const newData = { ...pgData, [selectedPG]: updated };
-    setPgData(newData); setPayModal(null);
-    await doPush(newData);
+    setPgData(newData); setPayModal(null);  // instant UI update
+    showToast('✅ Payment saved!');
+    doPush(newData, true);  // background push
   }
 
   async function addTenant() {
-    if (!newTenant.name.trim()) return showToast('Naam zaroor daalo', 'error');
+    if (!newTenant.name.trim())    return showToast('Naam zaroor daalo', 'error');
+    if (!newTenant.contact.trim()) return showToast('Contact number daalo', 'error');
+    if (!newTenant.deposit)        return showToast('Deposit amount daalo', 'error');
+    if (!newTenant.rent)           return showToast('Rent amount daalo', 'error');
+    if (!newTenant.dateJoining)    return showToast('Date of Joining daalo', 'error');
 
     const monthly = emptyMonthly();
 
@@ -932,8 +938,8 @@ export default function App() {
     setPgData(newData);
     setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '', depositCollector: '' });
     setShowAddTenant(false);
-    showToast('✅ Tenant added!', 'success');
-    await doPush(newData);
+    showToast('✅ ' + newTenant.name + ' added!', 'success');
+    doPush(newData, true);  // background push — UI instant
   }
 
   if (!userRole) return <LoginScreen onLogin={r => setUserRole(r)} />;
@@ -1293,33 +1299,27 @@ export default function App() {
                   <span style={{ fontWeight: 700, fontSize: 14, color: '#94a3b8' }}>NEW TENANT — {selectedPG}</span>
                   <button onClick={() => setShowAddTenant(false)} style={{ ...S.ghostBtn, fontSize: 12 }}>Cancel</button>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Input label="Naam *" value={newTenant.name} onChange={v => setNewTenant(p => ({ ...p, name: v }))} />
-                    <Input label="Contact" value={newTenant.contact} onChange={v => setNewTenant(p => ({ ...p, contact: v }))} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <Input label="Naam *" value={newTenant.name} onChange={v => setNewTenant(p => ({ ...p, name: v }))} />
+                  <Input label="Contact *" value={newTenant.contact} onChange={v => setNewTenant(p => ({ ...p, contact: v }))} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <Input label="Deposit ₹ *" value={newTenant.deposit} onChange={v => setNewTenant(p => ({ ...p, deposit: v }))} />
+                    <Input label="Rent ₹/mo *" value={newTenant.rent} onChange={v => setNewTenant(p => ({ ...p, rent: v }))} />
                   </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Input label="Deposit ₹" value={newTenant.deposit} onChange={v => setNewTenant(p => ({ ...p, deposit: v }))} />
-                    <Input label="Rent ₹/mo" value={newTenant.rent} onChange={v => setNewTenant(p => ({ ...p, rent: v }))} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Input label="Date Joining" type="date" value={newTenant.dateJoining} onChange={v => setNewTenant(p => ({ ...p, dateJoining: v }))} />
-                    <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
-                  </div>
+                  <Input label="Date Joining *" type="date" value={newTenant.dateJoining} onChange={v => setNewTenant(p => ({ ...p, dateJoining: v }))} />
+                  <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
                   <Input label="Note" value={newTenant.note} onChange={v => setNewTenant(p => ({ ...p, note: v }))} />
                   <div style={{ borderTop: '1px solid #1e293b', paddingTop: 10, marginTop: 2 }}>
                     <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, marginBottom: 8 }}>JOINING KE TIME PAYMENT (optional)</div>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                       <Input label="Rent Paid ₹" value={newTenant.joiningRentAmt} onChange={v => setNewTenant(p => ({ ...p, joiningRentAmt: v }))} />
                       <Sel label="Full/Half" value={newTenant.joiningRentHalfFull} onChange={v => setNewTenant(p => ({ ...p, joiningRentHalfFull: v }))} options={['Full', 'Half']} />
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                       <Input label="Deposit Paid ₹" value={newTenant.joiningDepositPaid} onChange={v => setNewTenant(p => ({ ...p, joiningDepositPaid: v }))} />
                       <Sel label="Deposit Collector" value={newTenant.depositCollector} onChange={v => setNewTenant(p => ({ ...p, depositCollector: v }))} options={COLLECTORS} />
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <Sel label="Rent Collector" value={newTenant.joiningCollector} onChange={v => setNewTenant(p => ({ ...p, joiningCollector: v }))} options={COLLECTORS} />
-                    </div>
+                    <Sel label="Rent Collector" value={newTenant.joiningCollector} onChange={v => setNewTenant(p => ({ ...p, joiningCollector: v }))} options={COLLECTORS} />
                     {/* Live preview of combined amount */}
                     {(parseFloat(newTenant.joiningRentAmt)||0) + (parseFloat(newTenant.joiningDepositPaid)||0) > 0 && (
                       <div style={{ marginTop: 8, background: '#0a0f1e', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
@@ -1458,16 +1458,16 @@ export default function App() {
 }
 
 const S = {
-  root: { minHeight: '100vh', background: '#0a0f1e', color: '#e2e8f0', fontFamily: "'Inter',system-ui,sans-serif" },
-  header: { background: '#0f1629', borderBottom: '1px solid #1e293b', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, position: 'sticky', top: 0, zIndex: 100 },
-  logo: { fontSize: 17, fontWeight: 800, color: '#f8fafc' },
-  hBtn: { background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 },
-  input: { width: '100%', background: '#0a0f1e', border: '1px solid #1e293b', color: '#e2e8f0', padding: '7px 10px', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' },
-  label: { fontSize: 11, color: '#64748b', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 },
-  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
-  modal: { background: '#111827', width: '100%', maxWidth: 640, borderRadius: '20px 20px 0 0', maxHeight: '94vh', overflowY: 'auto', padding: '16px 18px', boxShadow: '0 -8px 40px rgba(0,0,0,.6)' },
-  ghostBtn: { background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 },
-  greenBtn: { background: '#22c55e', border: 'none', color: '#fff', padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 14 },
-  blueBtn: { background: '#3b82f6', border: 'none', color: '#fff', padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 },
-  bigBtn: (bg, color = '#fff', pad = '13px 40px') => ({ background: bg, border: 'none', color, padding: pad, borderRadius: 14, cursor: 'pointer', fontWeight: 700, fontSize: 16, width: '100%', maxWidth: 280 }),
+  root:     { minHeight:'100vh', background:'#0a0f1e', color:'#e2e8f0', fontFamily:"'Inter',system-ui,sans-serif", maxWidth:600, margin:'0 auto' },
+  header:   { background:'#0f1629', borderBottom:'1px solid #1e293b', padding:'10px 12px', display:'flex', alignItems:'center', gap:6, position:'sticky', top:0, zIndex:100 },
+  logo:     { fontWeight:900, fontSize:18, color:'#f1f5f9', letterSpacing:-0.5 },
+  modal:    { background:'#0f1629', borderRadius:'16px 16px 0 0', padding:'16px', maxHeight:'92vh', overflowY:'auto', width:'100%', maxWidth:600 },
+  overlay:  { position:'fixed', inset:0, background:'rgba(0,0,0,.7)', display:'flex', alignItems:'flex-end', justifyContent:'center', zIndex:200, backdropFilter:'blur(4px)' },
+  input:    { background:'#0a0f1e', border:'1px solid #1e293b', color:'#e2e8f0', padding:'9px 10px', borderRadius:8, fontSize:14, width:'100%', boxSizing:'border-box', outline:'none', WebkitAppearance:'none' },
+  label:    { fontSize:10, color:'#64748b', marginBottom:4, fontWeight:700, letterSpacing:.8, textTransform:'uppercase' },
+  ghostBtn: { background:'transparent', border:'1px solid #1e293b', color:'#94a3b8', padding:'8px 14px', borderRadius:8, cursor:'pointer', fontWeight:600, fontSize:13 },
+  greenBtn: { background:'#22c55e', border:'none', color:'#fff', padding:'8px 16px', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:13 },
+  blueBtn:  { background:'#3b82f6', border:'none', color:'#fff', padding:'8px 16px', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:13 },
+  hBtn:     { background:'transparent', border:'1px solid #1e293b', color:'#94a3b8', padding:'6px 10px', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 },
+  bigBtn:   (bg, c='#fff', p='12px 28px') => ({ background:bg, border:'none', color:c, padding:p, borderRadius:12, cursor:'pointer', fontWeight:700, fontSize:15, width:'100%' }),
 };
