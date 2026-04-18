@@ -146,8 +146,8 @@ function buildRow(t, ex, isLeft) {
     return v !== "" ? v : String(fallback||"");
   }
   var note = String(t.note||"").trim() || String(ex[6]||"");
-  if (isLeft && note.indexOf("[LEFT]") === -1)
-    note = note ? note + " [LEFT]" : "[LEFT]";
+  // Never add [LEFT] to note automatically
+  note = note.replace(/\s*\[LEFT\]/gi, "").trim();
 
   var row = [
     s(t.name,ex[0]), s(t.contact,ex[1]), s(t.deposit,ex[2]), s(t.rent,ex[3]),

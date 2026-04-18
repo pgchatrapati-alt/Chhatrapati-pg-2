@@ -666,9 +666,9 @@ function AnalyticsTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
 // ═══ MAIN APP ═══
 export default function App() {
   const [pgData, setPgData] = useLocalStorage('pgData', INITIAL_DATA);
-  // DEFAULT_WEB_APP_URL from data.js — viewer ko URL daalni nahi padegi
-  // Admin ek baar data.js mein URL set kar de
-  const [webAppUrl, setWebAppUrl] = useLocalStorage('webAppUrl', DEFAULT_WEB_APP_URL || '');
+  // URL always from data.js — no localStorage, no UI input needed
+  const webAppUrl = DEFAULT_WEB_APP_URL || '';
+  const setWebAppUrl = () => {}; // no-op
   const [lastSync, setLastSync] = useLocalStorage('lastSync', '');
   const [userRole, setUserRole] = useLocalStorage('userRole', null);
   const [selectedPG, setSelectedPG] = useState(Object.keys(pgData)[0]);
@@ -677,11 +677,9 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [syncStatus, setSyncStatus] = useState('idle');
-  const [showSettings, setShowSettings] = useState(false);
   const [showAddTenant, setShowAddTenant] = useState(false);
   const [infoModal, setInfoModal] = useState(null);
   const [payModal, setPayModal] = useState(null);
-  const [urlDraft, setUrlDraft] = useState(webAppUrl);
   const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '', depositCollector: '' });
   const [pendingTab, setPendingTab] = useState('rent');
   const [depositInputs, setDepositInputs] = useState({}); // name -> amount being entered
@@ -951,31 +949,11 @@ export default function App() {
         {lastSync && <span style={{ fontSize: 10, color: '#475569' }}>{lastSync}</span>}
         {isAdmin && <>
           <button onClick={doPull} style={S.hBtn}>⬇</button>
-          <button onClick={() => setShowSettings(s => !s)} style={S.hBtn}>⚙</button>
         </>}
         <button onClick={() => setUserRole(null)} style={{ ...S.hBtn, color: '#ef4444', borderColor: '#ef444433' }}>⏻</button>
       </header>
 
-      {/* SETTINGS */}
-      {showSettings && isAdmin && (
-        <div style={{ background: '#111827', borderBottom: '1px solid #1e293b', padding: 16 }}>
-          <div style={{ fontWeight: 700, color: '#94a3b8', marginBottom: 8, fontSize: 14 }}>🔗 Google Sheets Auto-Sync</div>
-          <input value={urlDraft} onChange={e => setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" title="Yeh URL data.js mein DEFAULT_WEB_APP_URL ke roop mein bhi set kar sakte ho"
-            style={{ ...S.input, width: '100%', marginBottom: 8 }} />
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-            <button onClick={() => { setWebAppUrl(urlDraft); showToast('URL saved ✓'); setShowSettings(false); }} style={S.greenBtn}>💾 Save</button>
-            <button onClick={doTest} style={S.blueBtn}>🔌 Test</button>
-            <button onClick={doPull} style={S.ghostBtn}>⬇ Pull</button>
-          </div>
-          <button onClick={doClearAndPull}
-            style={{ width: '100%', background: '#ef444422', border: '1px solid #ef444466', color: '#ef4444', padding: '8px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
-            🗑 Cache Clear + Fresh Pull (Dashboard/Monthly_Calculation hatane ke liye)
-          </button>
-          <div style={{ background: '#0a0f1e', borderRadius: 8, padding: 12, fontSize: 12, color: '#64748b', lineHeight: 2 }}>
-            <b style={{ color: '#94a3b8' }}>Setup:</b> Google Sheet → Extensions → Apps Script → paste GoogleAppsScript_PG_Sync_v2.js → Deploy → Web App → URL yahan paste
-          </div>
-        </div>
-      )}
+
 
       {/* PG TABS */}
       <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '8px 14px', background: '#0f1629', borderBottom: '1px solid #1e293b', scrollbarWidth: 'none' }}>
@@ -1360,21 +1338,25 @@ export default function App() {
             )}
             {/* FIX 1: Sorted by joining date ascending, left tenants at bottom */}
             {filteredTenants.map(t => {
-              const isLeft = t.dateLeaving && new Date(t.dateLeaving) < new Date();
+              // isLeft: only if dateLeaving is a real non-empty date in the past
+              const isLeft = !!(t.dateLeaving && String(t.dateLeaving).trim() !== '' && new Date(t.dateLeaving) < new Date());
               const paid = parseFloat(t.monthly?.[selectedMonth]?.amount) || 0;
               const rent = parseFloat(t.rent) || 0;
               const hasDeposit = t.deposit && t.deposit !== '' && t.deposit !== '0';
               const rs = paid === 0 ? 'unpaid' : paid < rent ? 'half' : 'full';
               const rc = { unpaid: '#ef4444', half: '#f59e0b', full: '#22c55e' }[rs];
               const rl = { unpaid: 'Not Paid', half: `Half ₹${fmtNum(paid)}`, full: `✅ ₹${fmtNum(paid)}` }[rs];
+              // Active tenants: light blue border, left tenants: dim grey
+              const cardBg = isLeft ? '#0d1117' : '#0f1829';
+              const cardBorder = isLeft ? '#1e293b' : rs === 'full' ? '#0ea5e940' : rs === 'half' ? '#f59e0b44' : '#0ea5e922';
               return (
                 <div key={t.name + t.dateJoining}
-                  onClick={() => !isLeft && setInfoModal(t)}
-                  style={{ background: '#111827', borderRadius: 12, padding: '12px 14px', border: `1px solid ${rs !== 'full' && !isLeft ? rc + '55' : '#1e293b'}`, cursor: !isLeft ? 'pointer' : 'default', marginBottom: 8, opacity: isLeft ? 0.45 : 1 }}>
+                  onClick={() => setInfoModal(t)}
+                  style={{ background: cardBg, borderRadius: 12, padding: '12px 14px', border: `1px solid ${cardBorder}`, cursor: 'pointer', marginBottom: 8, opacity: isLeft ? 0.5 : 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 700, fontSize: FS, color: isLeft ? '#64748b' : '#f1f5f9' }}>{t.name}</span>
+                        <span style={{ fontWeight: 700, fontSize: FS, color: isLeft ? '#64748b' : '#e0f2fe' }}>{t.name}</span>
                         {isLeft && <Pill c="#64748b" bg="#33415522">Left</Pill>}
                         {!hasDeposit && !isLeft && <Pill c="#f59e0b" bg="#f59e0b22">No Dep</Pill>}
                         {rs === 'half' && !isLeft && <Pill c="#f59e0b" bg="#f59e0b22">Half</Pill>}
