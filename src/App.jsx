@@ -690,40 +690,45 @@ export default function App() {
   const showToast = useCallback((msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }, []);
   const markSync = () => setLastSync(new Date().toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }));
 
-  // FIX 2+3: Auto-pull on app load — viewer & admin dono ko fresh data milega
-  // Jab bhi app open ho ya page refresh ho → sheet se latest data lo
-  useEffect(() => {
-    if (!webAppUrl || !userRole) return; // URL ya login na ho to skip
-    // Silent auto-pull: no toast, no loading indicator
-    (async () => {
-      try {
-        const res = await pullFromSheets(webAppUrl);
-        if (res.success && res.data) {
-          const merged = {};
-          Object.keys(pgData).forEach(pg => { if (isValidPG(pg)) merged[pg] = pgData[pg]; });
-          Object.keys(res.data).forEach(pg => {
-            if (isValidPG(pg) && res.data[pg]?.length > 0) {
-              // Ensure every tenant has an ID (migration for old data)
-              // Filter null/empty rows and ensure every tenant has an ID
-          merged[pg] = res.data[pg]
-            .filter(t => t && t.name && String(t.name).trim() !== '')
-            ;
-            }
-          });
-          setPgData(merged);
-          markSync();
-          // If selectedPG got removed, reset to first
-          if (!merged[selectedPG]) {
-            const first = Object.keys(merged)[0];
-            if (first) setSelectedPG(first);
+  // Auto-pull: runs on app open AND on login
+  // 1. Page load pe: agar URL stored hai → background mein pull karo (login se pehle bhi)
+  // 2. Login ke baad: fresh pull karo
+  const doSilentPull = useCallback(async () => {
+    if (!webAppUrl) return;
+    setSyncStatus('syncing');
+    try {
+      const res = await pullFromSheets(webAppUrl);
+      if (res.success && res.data) {
+        const merged = {};
+        Object.keys(pgData).forEach(pg => { if (isValidPG(pg)) merged[pg] = pgData[pg]; });
+        Object.keys(res.data).forEach(pg => {
+          if (isValidPG(pg) && res.data[pg]?.length > 0) {
+            merged[pg] = res.data[pg].filter(t => t && t.name && String(t.name).trim() !== '');
           }
+        });
+        setPgData(merged);
+        markSync();
+        if (!merged[selectedPG]) {
+          const first = Object.keys(merged)[0];
+          if (first) setSelectedPG(first);
         }
-      } catch (e) {
-        // Silent fail — just use cached data
       }
-    })();
+    } catch (e) {}
+    setSyncStatus('idle');
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userRole, webAppUrl]); // runs when user logs in or URL changes
+  }, [webAppUrl]);
+
+  // Pull on page load (URL stored hai toh immediately)
+  useEffect(() => {
+    if (webAppUrl) doSilentPull();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // only on first mount
+
+  // Pull again on login
+  useEffect(() => {
+    if (userRole && webAppUrl) doSilentPull();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole, webAppUrl]);
 
   const doPush = useCallback(async (data, silent = false) => {
     if (!webAppUrl) { if (!silent) showToast('Settings mein Web App URL daalo', 'warn'); return false; }
@@ -941,7 +946,6 @@ export default function App() {
         {lastSync && <span style={{ fontSize: 10, color: '#475569' }}>{lastSync}</span>}
         {isAdmin && <>
           <button onClick={doPull} style={S.hBtn}>⬇</button>
-          <button onClick={() => doPush(pgData)} style={S.hBtn}>⬆</button>
           <button onClick={() => setShowSettings(s => !s)} style={S.hBtn}>⚙</button>
         </>}
         <button onClick={() => setUserRole(null)} style={{ ...S.hBtn, color: '#ef4444', borderColor: '#ef444433' }}>⏻</button>
