@@ -122,12 +122,15 @@ function writeData(pgData) {
           var rowNum   = nameMap[key];
           var existing = sheet.getRange(rowNum, 1, 1, NCOLS).getValues()[0];
           sheet.getRange(rowNum, 1, 1, NCOLS).setValues([buildRow(t, existing, isLeft)]);
+          colorRow(sheet, rowNum, isLeft, NCOLS);
 
         } else {
-          // ── NEW: append at bottom, no formatting ──────────
+          // ── NEW: append at bottom ─────────────────────────
           var newRow = buildRow(t, new Array(NCOLS).fill(""), isLeft);
           sheet.appendRow(newRow);
-          nameMap[key] = sheet.getLastRow();
+          var newRowNum = sheet.getLastRow();
+          nameMap[key] = newRowNum;
+          colorRow(sheet, newRowNum, isLeft, NCOLS);
         }
       });
 
@@ -137,6 +140,27 @@ function writeData(pgData) {
   });
 
   return { success: true, message: "Saved ✅" };
+}
+
+// ── Color rows by tenant status ─────────────────────────────
+// Active tenant = light blue tint, Left tenant = grey dim
+function colorRow(sheet, rowNum, isLeft, ncols) {
+  try {
+    var range = sheet.getRange(rowNum, 1, 1, ncols);
+    if (isLeft) {
+      // Left tenant: grey background, muted text
+      range.setBackground('#1a1f2e');
+      range.setFontColor('#64748b');
+    } else {
+      // Active tenant: light blue tint background
+      range.setBackground('#0d1f35');
+      range.setFontColor('#e0f2fe');
+      // Name column (col 1) brighter
+      sheet.getRange(rowNum, 1).setFontColor('#bae6fd').setFontWeight('bold');
+    }
+  } catch(e) {
+    // Ignore color errors — data is more important
+  }
 }
 
 // Merge incoming + existing. Blank incoming → keep existing value.

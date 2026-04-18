@@ -755,7 +755,11 @@ export default function App() {
       Object.keys(res.data).forEach(pg => {
         if (isValidPG(pg) && res.data[pg]?.length > 0) merged[pg] = res.data[pg];
       });
-      setPgData(merged); markSync(); setSyncStatus('ok'); showToast('✅ Data updated!');
+      setPgData(merged); markSync();
+      showToast('✅ Data updated! Applying colors…');
+      // Push back silently — this applies row colors to all existing tenants
+      doPush(merged, true);
+      setSyncStatus('ok');
       setTimeout(() => setSyncStatus('idle'), 4000);
     } else { setSyncStatus('error'); showToast('❌ ' + (res.error || 'Pull failed'), 'error'); setTimeout(() => setSyncStatus('idle'), 5000); }
   };
@@ -1346,9 +1350,12 @@ export default function App() {
               const rs = paid === 0 ? 'unpaid' : paid < rent ? 'half' : 'full';
               const rc = { unpaid: '#ef4444', half: '#f59e0b', full: '#22c55e' }[rs];
               const rl = { unpaid: 'Not Paid', half: `Half ₹${fmtNum(paid)}`, full: `✅ ₹${fmtNum(paid)}` }[rs];
-              // Active tenants: light blue border, left tenants: dim grey
-              const cardBg = isLeft ? '#0d1117' : '#0f1829';
-              const cardBorder = isLeft ? '#1e293b' : rs === 'full' ? '#0ea5e940' : rs === 'half' ? '#f59e0b44' : '#0ea5e922';
+              // Active = light blue card, Left = dim grey
+              const cardBg     = isLeft ? '#0d1117' : '#0d1f35';
+              const cardBorder = isLeft ? '#1e293b'
+                : rs === 'full' ? '#22c55e55'
+                : rs === 'half' ? '#f59e0b55'
+                : '#0ea5e944';
               return (
                 <div key={t.name + t.dateJoining}
                   onClick={() => setInfoModal(t)}
