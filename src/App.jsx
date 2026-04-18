@@ -1,6 +1,6 @@
 // v10-pgfix-202604091704
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { MONTHS, PG_COLORS, INITIAL_DATA } from './data.js';
+import { MONTHS, PG_COLORS, INITIAL_DATA, DEFAULT_WEB_APP_URL } from './data.js';
 import { useLocalStorage } from './useStorage.js';
 import { pushToSheets, pullFromSheets, pingSheet } from './sync.js';
 
@@ -666,7 +666,9 @@ function AnalyticsTab({ pgData, selectedMonth, setSelectedMonth, pgColor }) {
 // ═══ MAIN APP ═══
 export default function App() {
   const [pgData, setPgData] = useLocalStorage('pgData', INITIAL_DATA);
-  const [webAppUrl, setWebAppUrl] = useLocalStorage('webAppUrl', '');
+  // DEFAULT_WEB_APP_URL from data.js — viewer ko URL daalni nahi padegi
+  // Admin ek baar data.js mein URL set kar de
+  const [webAppUrl, setWebAppUrl] = useLocalStorage('webAppUrl', DEFAULT_WEB_APP_URL || '');
   const [lastSync, setLastSync] = useLocalStorage('lastSync', '');
   const [userRole, setUserRole] = useLocalStorage('userRole', null);
   const [selectedPG, setSelectedPG] = useState(Object.keys(pgData)[0]);
@@ -694,7 +696,8 @@ export default function App() {
   // 1. Page load pe: agar URL stored hai → background mein pull karo (login se pehle bhi)
   // 2. Login ke baad: fresh pull karo
   const doSilentPull = useCallback(async () => {
-    if (!webAppUrl) return;
+    const effectiveUrl = webAppUrl || DEFAULT_WEB_APP_URL;
+    if (!effectiveUrl) return;
     setSyncStatus('syncing');
     try {
       const res = await pullFromSheets(webAppUrl);
@@ -718,17 +721,19 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [webAppUrl]);
 
-  // Pull on page load (URL stored hai toh immediately)
+  // Pull on page load — viewer + admin dono ke liye
+  // DEFAULT_WEB_APP_URL set hai to bina login ke bhi fresh data milega
   useEffect(() => {
-    if (webAppUrl) doSilentPull();
+    const url = webAppUrl || DEFAULT_WEB_APP_URL;
+    if (url) doSilentPull();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // only on first mount
+  }, []); // on first mount
 
-  // Pull again on login
+  // Pull again after login
   useEffect(() => {
-    if (userRole && webAppUrl) doSilentPull();
+    if (userRole) doSilentPull();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userRole, webAppUrl]);
+  }, [userRole]);
 
   const doPush = useCallback(async (data, silent = false) => {
     if (!webAppUrl) { if (!silent) showToast('Settings mein Web App URL daalo', 'warn'); return false; }
@@ -955,7 +960,7 @@ export default function App() {
       {showSettings && isAdmin && (
         <div style={{ background: '#111827', borderBottom: '1px solid #1e293b', padding: 16 }}>
           <div style={{ fontWeight: 700, color: '#94a3b8', marginBottom: 8, fontSize: 14 }}>🔗 Google Sheets Auto-Sync</div>
-          <input value={urlDraft} onChange={e => setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec"
+          <input value={urlDraft} onChange={e => setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" title="Yeh URL data.js mein DEFAULT_WEB_APP_URL ke roop mein bhi set kar sakte ho"
             style={{ ...S.input, width: '100%', marginBottom: 8 }} />
           <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
             <button onClick={() => { setWebAppUrl(urlDraft); showToast('URL saved ✓'); setShowSettings(false); }} style={S.greenBtn}>💾 Save</button>

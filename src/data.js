@@ -1,3 +1,11 @@
+// ─────────────────────────────────────────────────────────────
+// ADMIN: Apni Google Apps Script Web App URL yahan daalo
+// Ek baar set karne ke baad viewer ko URL daalni nahi padegi
+// Apps Script → Deploy → Web App → URL copy karo
+// ─────────────────────────────────────────────────────────────
+export const DEFAULT_WEB_APP_URL = '';
+// Example: export const DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwmNDvAXY70yFA8NHJDu3Y7OsG6FP2k-4X-nLirUQ2YjjSYkZOrZNOruUUfwzOxuvUU/exec';
+
 export const MONTHS = [
   "January","February","March","April","May","June",
   "July","August","September","October","November","December"
