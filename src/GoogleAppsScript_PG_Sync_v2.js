@@ -69,9 +69,12 @@ function readAllData() {
   return { success: true, data: allData };
 }
 
-// WRITE — zero formatting calls, name-based, pure data
+// WRITE — Fixed sections: Active=row 6-55, Left=row 56+
 function writeData(pgData) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ACTIVE_START = 6;
+  var LEFT_START   = 56;
+
   Object.keys(pgData).forEach(function(pgName) {
     try {
       var incoming = (pgData[pgName]||[]).filter(function(t) {
@@ -81,84 +84,105 @@ function writeData(pgData) {
 
       var sheet = ss.getSheetByName(pgName);
       if (!sheet) sheet = ss.insertSheet(pgName);
+
       if (sheet.getMaxColumns() < NCOLS)
         sheet.insertColumnsAfter(sheet.getMaxColumns(), NCOLS - sheet.getMaxColumns());
 
-      // ONE read — name column only to build map
-      var lastRow = sheet.getLastRow();
+      // Ensure enough rows
+      if (sheet.getMaxRows() < LEFT_START + 30)
+        sheet.insertRowsAfter(sheet.getMaxRows(), LEFT_START + 30 - sheet.getMaxRows());
+
+      // Build nameMap — ONE read per section
       var nameMap = {};
-      if (lastRow >= DATA_START) {
-        var nameCol = sheet.getRange(DATA_START, 1, lastRow - DATA_START + 1, 1).getValues();
-        nameCol.forEach(function(r, i) {
+      var sheetLR = sheet.getLastRow();
+
+      // Active section (6-55)
+      var activeLR = Math.min(sheetLR, LEFT_START - 1);
+      if (activeLR >= ACTIVE_START) {
+        var ad = sheet.getRange(ACTIVE_START, 1, activeLR - ACTIVE_START + 1, 1).getValues();
+        ad.forEach(function(r, i) {
           var n = String(r[0]||"").trim().toLowerCase();
-          if (n) nameMap[n] = DATA_START + i;
+          if (n) nameMap[n] = ACTIVE_START + i;
         });
       }
 
-      // Split: active (no leaving date) vs left (has leaving date)
+      // Left section (56+)
+      if (sheetLR >= LEFT_START) {
+        var ld = sheet.getRange(LEFT_START, 1, sheetLR - LEFT_START + 1, 1).getValues();
+        ld.forEach(function(r, i) {
+          var n = String(r[0]||"").trim().toLowerCase();
+          if (n) nameMap[n] = LEFT_START + i;
+        });
+      }
+
+      // Split incoming
       var activeT = incoming.filter(function(t) {
         var dl = String(t.dateLeaving||"").trim(); return !dl || dl === "null";
       });
       var leftT = incoming.filter(function(t) {
-        var dl = String(t.dateLeaving||"").trim(); return dl && dl !== "null";
+        var dl = String(t.dateLeaving||"").trim(); return !!(dl && dl !== "null");
       });
 
-      // Find separator row (first blank row >= DATA_START)
-      var sepRow = 0;
-      var lr2 = sheet.getLastRow();
-      if (lr2 >= DATA_START) {
-        var col1 = sheet.getRange(DATA_START, 1, lr2 - DATA_START + 1, 1).getValues();
-        for (var si = 0; si < col1.length; si++) {
-          if (String(col1[si][0]||"").trim() === "") { sepRow = DATA_START + si; break; }
-        }
-      }
+      // Next empty row in active section
+      var nextA = ACTIVE_START;
+      Object.keys(nameMap).forEach(function(k) {
+        if (nameMap[k] >= ACTIVE_START && nameMap[k] < LEFT_START)
+          nextA = Math.max(nextA, nameMap[k] + 1);
+      });
 
-      // Active tenants: update in place OR insert before separator
+      // Next empty row in left section
+      var nextL = LEFT_START;
+      Object.keys(nameMap).forEach(function(k) {
+        if (nameMap[k] >= LEFT_START)
+          nextL = Math.max(nextL, nameMap[k] + 1);
+      });
+
+      // ── Process active tenants ────────────────────────
       activeT.forEach(function(t) {
         var key = String(t.name).trim().toLowerCase();
-        if (nameMap[key]) {
+        if (nameMap[key] && nameMap[key] < LEFT_START) {
+          // Update in active section
           var rn = nameMap[key];
-          var ex = sheet.getRange(rn, 1, 1, NCOLS).getValues()[0];
-          sheet.getRange(rn, 1, 1, NCOLS).setValues([buildRow(t, ex, false)]);
+          var ex = sheet.getRange(rn,1,1,NCOLS).getValues()[0];
+          sheet.getRange(rn,1,1,NCOLS).setValues([buildRow(t,ex,false)]);
           try { sheet.getRange(rn,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
         } else {
-          if (sepRow > 0) {
-            // Shift all existing row refs >= sepRow down by 1
-            Object.keys(nameMap).forEach(function(k) {
-              if (nameMap[k] >= sepRow) nameMap[k]++;
-            });
-            sheet.insertRowBefore(sepRow);
-            sheet.getRange(sepRow,1,1,NCOLS).setValues([buildRow(t, new Array(NCOLS).fill(""), false)]);
-            try { sheet.getRange(sepRow,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
-            nameMap[key] = sepRow; sepRow++;
-          } else {
-            sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), false));
-            var na = sheet.getLastRow(); nameMap[key] = na;
-            try { sheet.getRange(na,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
+          // New or moved from left — write to active section
+          if (nameMap[key] && nameMap[key] >= LEFT_START) {
+            // Clear old left row
+            sheet.getRange(nameMap[key],1,1,NCOLS).clearContent();
+            try { sheet.getRange(nameMap[key],1,1,7).setBackground(null).setFontColor(null); } catch(e){}
+          }
+          if (nextA < LEFT_START) {
+            sheet.getRange(nextA,1,1,NCOLS).setValues([buildRow(t,new Array(NCOLS).fill(""),false)]);
+            try { sheet.getRange(nextA,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
+            nameMap[key] = nextA; nextA++;
           }
         }
       });
 
-      // Ensure blank separator before left tenants
-      if (leftT.length > 0 && sepRow === 0) {
-        sheet.appendRow(new Array(NCOLS).fill(""));
-        sepRow = sheet.getLastRow();
-      }
-
-      // Left tenants: update in place OR append at bottom
+      // ── Process left tenants ──────────────────────────
       leftT.forEach(function(t) {
         var key = String(t.name).trim().toLowerCase();
-        if (nameMap[key]) {
+        if (nameMap[key] && nameMap[key] >= LEFT_START) {
+          // Update in left section
           var rn = nameMap[key];
-          var ex = sheet.getRange(rn, 1, 1, NCOLS).getValues()[0];
-          sheet.getRange(rn, 1, 1, NCOLS).setValues([buildRow(t, ex, true)]);
+          var ex = sheet.getRange(rn,1,1,NCOLS).getValues()[0];
+          sheet.getRange(rn,1,1,NCOLS).setValues([buildRow(t,ex,true)]);
           try { sheet.getRange(rn,1,1,7).setBackground('#ffffff').setFontColor('#000000'); } catch(e){}
         } else {
-          sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), true));
-          var nl = sheet.getLastRow(); nameMap[key] = nl;
-          try { sheet.getRange(nl,1,1,7).setBackground('#ffffff').setFontColor('#000000'); } catch(e){}
+          // New or moved from active — write to left section
+          if (nameMap[key] && nameMap[key] < LEFT_START) {
+            // Clear old active row
+            sheet.getRange(nameMap[key],1,1,NCOLS).clearContent();
+            try { sheet.getRange(nameMap[key],1,1,7).setBackground(null).setFontColor(null); } catch(e){}
+          }
+          sheet.getRange(nextL,1,1,NCOLS).setValues([buildRow(t,new Array(NCOLS).fill(""),true)]);
+          try { sheet.getRange(nextL,1,1,7).setBackground('#ffffff').setFontColor('#000000'); } catch(e){}
+          nameMap[key] = nextL; nextL++;
         }
       });
+
     } catch(e) { Logger.log("ERR " + pgName + ": " + e.message); }
   });
   return { success: true, message: "Saved ✅" };
