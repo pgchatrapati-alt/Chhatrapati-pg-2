@@ -123,12 +123,15 @@ function writeData(pgData) {
         var dl = String(t.dateLeaving||"").trim(); return !!(dl && dl !== "null");
       });
 
-      // Next empty row in active section
+      // Next empty row in active section = first empty row after last active tenant
       var nextA = ACTIVE_START;
-      Object.keys(nameMap).forEach(function(k) {
-        if (nameMap[k] >= ACTIVE_START && nameMap[k] < LEFT_START)
-          nextA = Math.max(nextA, nameMap[k] + 1);
-      });
+      for (var r = ACTIVE_START; r < LEFT_START; r++) {
+        var cellVal = String(sheet.getRange(r, 1).getValue()||"").trim();
+        if (cellVal !== "") nextA = r + 1;
+        else break; // first empty row found
+      }
+      // Safety: don't go past LEFT_START
+      if (nextA >= LEFT_START) nextA = LEFT_START - 1;
 
       // Next empty row in left section
       var nextL = LEFT_START;
