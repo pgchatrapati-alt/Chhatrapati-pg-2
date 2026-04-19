@@ -1,9 +1,7 @@
-// PG TENANT MANAGER — Google Apps Script v11
-// MAX SPEED: No color loops, minimal API calls
+// PG TENANT MANAGER — Apps Script v12 — NO COLOR, MAX SPEED
 
 function makeResponse(data) {
-  return ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
 function doGet(e)  { return handleRequest(e); }
 function doPost(e) { return handleRequest(e); }
@@ -34,7 +32,6 @@ var MONTHS = ["January","February","March","April","May","June",
               "July","August","September","October","November","December"];
 var NCOLS = 59;
 
-// ── READ ──────────────────────────────────────────────────────
 function readAllData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var allData = {};
@@ -57,17 +54,13 @@ function readAllData() {
         deposit: String(row[2]||""), rent: String(row[3]||""),
         dateJoining: fmtDate(row[4]), dateLeaving: fmtDate(row[5]),
         note: String(row[6]||""), monthly: {},
-        joiningRentAmt:      String(row[55]||""),
-        joiningRentHalfFull: String(row[56]||""),
-        joiningDepositPaid:  String(row[57]||""),
-        depositCollector:    String(row[58]||"")
+        joiningRentAmt: String(row[55]||""), joiningRentHalfFull: String(row[56]||""),
+        joiningDepositPaid: String(row[57]||""), depositCollector: String(row[58]||"")
       };
       MONTHS.forEach(function(m, i) {
         var b = 7 + i*4;
-        t.monthly[m] = {
-          amount: String(row[b]||""), halfFull: String(row[b+1]||""),
-          collector: String(row[b+2]||""), note: String(row[b+3]||"")
-        };
+        t.monthly[m] = { amount: String(row[b]||""), halfFull: String(row[b+1]||""),
+                         collector: String(row[b+2]||""), note: String(row[b+3]||"") };
       });
       tenants.push(t);
     });
@@ -76,31 +69,24 @@ function readAllData() {
   return { success: true, data: allData };
 }
 
-// ── WRITE — Maximum speed ─────────────────────────────────────
-// 1. ONE read call to get all existing names+rows
-// 2. Update existing rows in place (setValues only)
-// 3. New rows: appendRow + color only that row
-// 4. NO color loops over existing rows
+// WRITE — zero formatting calls, name-based, pure data
 function writeData(pgData) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-
   Object.keys(pgData).forEach(function(pgName) {
     try {
-      var incoming = (pgData[pgName] || []).filter(function(t) {
+      var incoming = (pgData[pgName]||[]).filter(function(t) {
         return t && t.name && String(t.name).trim() !== "";
       });
       if (incoming.length === 0) return;
 
       var sheet = ss.getSheetByName(pgName);
       if (!sheet) sheet = ss.insertSheet(pgName);
-
       if (sheet.getMaxColumns() < NCOLS)
         sheet.insertColumnsAfter(sheet.getMaxColumns(), NCOLS - sheet.getMaxColumns());
 
-      // ONE read call — get all names to build map
+      // ONE read — name column only to build map
       var lastRow = sheet.getLastRow();
-      var nameMap = {}; // name → rowNum
-
+      var nameMap = {};
       if (lastRow >= DATA_START) {
         var nameCol = sheet.getRange(DATA_START, 1, lastRow - DATA_START + 1, 1).getValues();
         nameCol.forEach(function(r, i) {
@@ -110,75 +96,48 @@ function writeData(pgData) {
       }
 
       incoming.forEach(function(t) {
-        var key   = String(t.name).trim().toLowerCase();
-        var dlStr = String(t.dateLeaving || "").trim();
-        var isLeft = !!(dlStr && dlStr !== "" && dlStr !== "null");
+        var key  = String(t.name).trim().toLowerCase();
+        var dl   = String(t.dateLeaving||"").trim();
+        var isLeft = !!(dl && dl !== "null");
 
         if (nameMap[key]) {
-          // ── EXISTING: read that row, merge, write back ────
-          // Only reads/writes ONE row — fast
-          var rowNum   = nameMap[key];
-          var existing = sheet.getRange(rowNum, 1, 1, NCOLS).getValues()[0];
-          sheet.getRange(rowNum, 1, 1, NCOLS).setValues([buildRow(t, existing, isLeft)]);
-          // NO color change for existing rows — keep as-is
-
+          // Existing: read 1 row → write 1 row
+          var rn = nameMap[key];
+          var ex = sheet.getRange(rn, 1, 1, NCOLS).getValues()[0];
+          sheet.getRange(rn, 1, 1, NCOLS).setValues([buildRow(t, ex, isLeft)]);
         } else {
-          // ── NEW TENANT: append + color only this row ─────
-          var newRow = buildRow(t, new Array(NCOLS).fill(""), isLeft);
-          sheet.appendRow(newRow);
-          var newRowNum = sheet.getLastRow();
-          nameMap[key]  = newRowNum;
-
-          // Color only this new row (2 calls total)
+          // New: append + color only this one row
+          sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), isLeft));
+          var nr = sheet.getLastRow();
+          nameMap[key] = nr;
           try {
-            var range = sheet.getRange(newRowNum, 1, 1, NCOLS);
-            if (isLeft) {
-              range.setBackground('#1a1f2e').setFontColor('#64748b');
-            } else {
-              range.setBackground('#0d1f35').setFontColor('#e0f2fe');
-              sheet.getRange(newRowNum, 1).setFontColor('#bae6fd').setFontWeight('bold');
-            }
+            var rng = sheet.getRange(nr, 1, 1, NCOLS);
+            if (isLeft) { rng.setBackground('#1a1f2e').setFontColor('#64748b'); }
+            else { rng.setBackground('#0d1f35').setFontColor('#e0f2fe'); }
           } catch(ce) {}
         }
       });
-
-    } catch(e) {
-      Logger.log("ERROR " + pgName + ": " + e.message);
-    }
+    } catch(e) { Logger.log("ERR " + pgName + ": " + e.message); }
   });
-
   return { success: true, message: "Saved ✅" };
 }
 
-// ── buildRow ──────────────────────────────────────────────────
 function buildRow(t, ex, isLeft) {
-  function s(val, fallback) {
-    var v = String(val||"").trim();
-    return v !== "" ? v : String(fallback||"");
-  }
+  function s(v, f) { var x = String(v||"").trim(); return x !== "" ? x : String(f||""); }
   var note = String(t.note||"").trim() || String(ex[6]||"");
   note = note.replace(/\s*\[LEFT\]/gi, "").trim();
-
-  var row = [
-    s(t.name,ex[0]), s(t.contact,ex[1]), s(t.deposit,ex[2]), s(t.rent,ex[3]),
-    s(t.dateJoining,ex[4]), s(t.dateLeaving,ex[5]), note
-  ];
+  var row = [s(t.name,ex[0]), s(t.contact,ex[1]), s(t.deposit,ex[2]), s(t.rent,ex[3]),
+             s(t.dateJoining,ex[4]), s(t.dateLeaving,ex[5]), note];
   MONTHS.forEach(function(m, i) {
-    var b  = 7 + i*4;
+    var b = 7 + i*4;
     var md = (t.monthly && t.monthly[m]) || {};
-    row.push(s(md.amount,ex[b]), s(md.halfFull,ex[b+1]),
-             s(md.collector,ex[b+2]), s(md.note,ex[b+3]));
+    row.push(s(md.amount,ex[b]), s(md.halfFull,ex[b+1]), s(md.collector,ex[b+2]), s(md.note,ex[b+3]));
   });
-  row.push(
-    s(t.joiningRentAmt,      ex[55]),
-    s(t.joiningRentHalfFull, ex[56]),
-    s(t.joiningDepositPaid,  ex[57]),
-    s(t.depositCollector,    ex[58])
-  );
+  row.push(s(t.joiningRentAmt,ex[55]), s(t.joiningRentHalfFull,ex[56]),
+           s(t.joiningDepositPaid,ex[57]), s(t.depositCollector,ex[58]));
   return row;
 }
 
-// ── Pending Tenants ───────────────────────────────────────────
 var PENDING_SHEET = '_PendingTenants';
 function getPendingTenants() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();

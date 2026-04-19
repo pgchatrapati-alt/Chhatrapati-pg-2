@@ -890,11 +890,16 @@ export default function App() {
   }
 
   async function addTenant() {
-    if (!newTenant.name.trim())    return showToast('Naam zaroor daalo', 'error');
-    if (!newTenant.contact.trim()) return showToast('Contact number daalo', 'error');
-    if (!newTenant.deposit)        return showToast('Deposit amount daalo', 'error');
-    if (!newTenant.rent)           return showToast('Rent amount daalo', 'error');
-    if (!newTenant.dateJoining)    return showToast('Date of Joining daalo', 'error');
+    if (!newTenant.name.trim())         return showToast('Naam zaroor daalo', 'error');
+    if (!newTenant.contact.trim())      return showToast('Contact number daalo', 'error');
+    if (!newTenant.deposit)             return showToast('Deposit amount daalo', 'error');
+    if (!newTenant.rent)                return showToast('Rent amount daalo', 'error');
+    if (!newTenant.dateJoining)         return showToast('Date of Joining daalo', 'error');
+    if (!newTenant.joiningRentAmt)      return showToast('Rent Paid daalo (Joining ke time)', 'error');
+    if (!newTenant.joiningRentHalfFull) return showToast('Full/Half select karo', 'error');
+    if (!newTenant.joiningCollector)    return showToast('Rent Collector select karo', 'error');
+    if (!newTenant.joiningDepositPaid)  return showToast('Deposit Paid daalo', 'error');
+    if (!newTenant.depositCollector)    return showToast('Deposit Collector select karo', 'error');
 
     const monthly = emptyMonthly();
 
@@ -1314,16 +1319,16 @@ export default function App() {
                   <Input label="Date Leaving" type="date" value={newTenant.dateLeaving} onChange={v => setNewTenant(p => ({ ...p, dateLeaving: v }))} />
                   <Input label="Note" value={newTenant.note} onChange={v => setNewTenant(p => ({ ...p, note: v }))} />
                   <div style={{ borderTop: '1px solid #1e293b', paddingTop: 10, marginTop: 2 }}>
-                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, marginBottom: 8 }}>JOINING KE TIME PAYMENT (optional)</div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, marginBottom: 8 }}>JOINING KE TIME PAYMENT</div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                      <Input label="Rent Paid ₹" value={newTenant.joiningRentAmt} onChange={v => setNewTenant(p => ({ ...p, joiningRentAmt: v }))} />
-                      <Sel label="Full/Half" value={newTenant.joiningRentHalfFull} onChange={v => setNewTenant(p => ({ ...p, joiningRentHalfFull: v }))} options={['Full', 'Half']} />
+                      <Input label="Rent Paid ₹ *" value={newTenant.joiningRentAmt} onChange={v => setNewTenant(p => ({ ...p, joiningRentAmt: v }))} />
+                      <Sel label="Full/Half *" value={newTenant.joiningRentHalfFull} onChange={v => setNewTenant(p => ({ ...p, joiningRentHalfFull: v }))} options={['Full', 'Half']} />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                      <Input label="Deposit Paid ₹" value={newTenant.joiningDepositPaid} onChange={v => setNewTenant(p => ({ ...p, joiningDepositPaid: v }))} />
-                      <Sel label="Deposit Collector" value={newTenant.depositCollector} onChange={v => setNewTenant(p => ({ ...p, depositCollector: v }))} options={COLLECTORS} />
+                      <Input label="Deposit Paid ₹ *" value={newTenant.joiningDepositPaid} onChange={v => setNewTenant(p => ({ ...p, joiningDepositPaid: v }))} />
+                      <Sel label="Deposit Collector *" value={newTenant.depositCollector} onChange={v => setNewTenant(p => ({ ...p, depositCollector: v }))} options={COLLECTORS} />
                     </div>
-                    <Sel label="Rent Collector" value={newTenant.joiningCollector} onChange={v => setNewTenant(p => ({ ...p, joiningCollector: v }))} options={COLLECTORS} />
+                    <Sel label="Rent Collector *" value={newTenant.joiningCollector} onChange={v => setNewTenant(p => ({ ...p, joiningCollector: v }))} options={COLLECTORS} />
                     {/* Live preview of combined amount */}
                     {(parseFloat(newTenant.joiningRentAmt)||0) + (parseFloat(newTenant.joiningDepositPaid)||0) > 0 && (
                       <div style={{ marginTop: 8, background: '#0a0f1e', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
