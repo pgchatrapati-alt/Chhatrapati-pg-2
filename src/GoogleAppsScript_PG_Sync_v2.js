@@ -95,27 +95,65 @@ function writeData(pgData) {
         });
       }
 
-      incoming.forEach(function(t) {
-        var key  = String(t.name).trim().toLowerCase();
-        var dl   = String(t.dateLeaving||"").trim();
-        var isLeft = !!(dl && dl !== "null");
+      // Split: active (no leaving date) vs left (has leaving date)
+      var activeT = incoming.filter(function(t) {
+        var dl = String(t.dateLeaving||"").trim(); return !dl || dl === "null";
+      });
+      var leftT = incoming.filter(function(t) {
+        var dl = String(t.dateLeaving||"").trim(); return dl && dl !== "null";
+      });
 
+      // Find separator row (first blank row >= DATA_START)
+      var sepRow = 0;
+      var lr2 = sheet.getLastRow();
+      if (lr2 >= DATA_START) {
+        var col1 = sheet.getRange(DATA_START, 1, lr2 - DATA_START + 1, 1).getValues();
+        for (var si = 0; si < col1.length; si++) {
+          if (String(col1[si][0]||"").trim() === "") { sepRow = DATA_START + si; break; }
+        }
+      }
+
+      // Active tenants: update in place OR insert before separator
+      activeT.forEach(function(t) {
+        var key = String(t.name).trim().toLowerCase();
         if (nameMap[key]) {
-          // Existing: read 1 row → write 1 row
           var rn = nameMap[key];
           var ex = sheet.getRange(rn, 1, 1, NCOLS).getValues()[0];
-          sheet.getRange(rn, 1, 1, NCOLS).setValues([buildRow(t, ex, isLeft)]);
+          sheet.getRange(rn, 1, 1, NCOLS).setValues([buildRow(t, ex, false)]);
+          try { sheet.getRange(rn,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
         } else {
-          // New: append + color only this one row
-          sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), isLeft));
-          var nr = sheet.getLastRow();
-          nameMap[key] = nr;
-          try {
-            // Color only first 7 cols (Name to Note) — fast
-            var rng = sheet.getRange(nr, 1, 1, 7);
-            if (isLeft) { rng.setBackground('#1a1f2e').setFontColor('#64748b'); }
-            else { rng.setBackground('#0d1f35').setFontColor('#e0f2fe'); }
-          } catch(ce) {}
+          if (sepRow > 0) {
+            // Insert before separator — stays in active section
+            sheet.insertRowBefore(sepRow);
+            sheet.getRange(sepRow,1,1,NCOLS).setValues([buildRow(t, new Array(NCOLS).fill(""), false)]);
+            try { sheet.getRange(sepRow,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
+            nameMap[key] = sepRow; sepRow++;
+          } else {
+            sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), false));
+            var na = sheet.getLastRow(); nameMap[key] = na;
+            try { sheet.getRange(na,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
+          }
+        }
+      });
+
+      // Ensure blank separator before left tenants
+      if (leftT.length > 0 && sepRow === 0) {
+        sheet.appendRow(new Array(NCOLS).fill(""));
+        sepRow = sheet.getLastRow();
+      }
+
+      // Left tenants: update in place OR append at bottom
+      leftT.forEach(function(t) {
+        var key = String(t.name).trim().toLowerCase();
+        if (nameMap[key]) {
+          var rn = nameMap[key];
+          var ex = sheet.getRange(rn, 1, 1, NCOLS).getValues()[0];
+          sheet.getRange(rn, 1, 1, NCOLS).setValues([buildRow(t, ex, true)]);
+          try { sheet.getRange(rn,1,1,7).setBackground('#ffffff').setFontColor('#000000'); } catch(e){}
+        } else {
+          sheet.appendRow(buildRow(t, new Array(NCOLS).fill(""), true));
+          var nl = sheet.getLastRow(); nameMap[key] = nl;
+          try { sheet.getRange(nl,1,1,7).setBackground('#ffffff').setFontColor('#000000'); } catch(e){}
         }
       });
     } catch(e) { Logger.log("ERR " + pgName + ": " + e.message); }
@@ -127,6 +165,9 @@ function buildRow(t, ex, isLeft) {
   function s(v, f) { var x = String(v||"").trim(); return x !== "" ? x : String(f||""); }
   var note = String(t.note||"").trim() || String(ex[6]||"");
   note = note.replace(/\s*\[LEFT\]/gi, "").trim();
+  // Add [LEFT] tag when tenant has left
+  if (isLeft && note.indexOf("[LEFT]") === -1)
+    note = note ? note + " [LEFT]" : "[LEFT]";
   var row = [s(t.name,ex[0]), s(t.contact,ex[1]), s(t.deposit,ex[2]), s(t.rent,ex[3]),
              s(t.dateJoining,ex[4]), s(t.dateLeaving,ex[5]), note];
   MONTHS.forEach(function(m, i) {
