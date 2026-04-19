@@ -1,5 +1,5 @@
-// PG TENANT MANAGER — Google Apps Script v9
-// SIMPLEST SAFE WRITE — appendRow only, no inserts, no deletes, no color
+// PG TENANT MANAGER — Google Apps Script v11
+// MAX SPEED: No color loops, minimal API calls
 
 function makeResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
@@ -12,8 +12,7 @@ function handleRequest(e) {
   try {
     var action, data;
     if (e.postData && e.postData.contents) {
-      var b = JSON.parse(e.postData.contents);
-      action = b.action; data = b.data;
+      var b = JSON.parse(e.postData.contents); action = b.action; data = b.data;
     } else {
       action = e.parameter.action;
       data = e.parameter.data ? JSON.parse(e.parameter.data) : null;
@@ -21,32 +20,31 @@ function handleRequest(e) {
     if (action === "ping")  return makeResponse({ success: true, message: "Connected ✅" });
     if (action === "read")  return makeResponse(readAllData());
     if (action === "write" && data) return makeResponse(writeData(data));
+    if (action === "getPending")  return makeResponse(getPendingTenants());
+    if (action === "approve" && data) return makeResponse(approveTenant(data));
+    if (action === "reject"  && data) return makeResponse(rejectTenant(data));
     return makeResponse({ success: false, error: "Unknown action" });
   } catch(err) {
     return makeResponse({ success: false, error: err.message });
   }
 }
 
-var DATA_START = 6; // rows 1-5 user ka fixed area, row 6 se tenant data
+var DATA_START = 6;
 var MONTHS = ["January","February","March","April","May","June",
               "July","August","September","October","November","December"];
-var NCOLS = 59; // 7 + 12*4 + 4 joining cols (BD=rent amt, BE=halfFull, BF=deposit paid, BG=deposit collector)
+var NCOLS = 59;
 
 // ── READ ──────────────────────────────────────────────────────
 function readAllData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var allData = {};
-
   ss.getSheets().forEach(function(sheet) {
     var name = sheet.getName();
     if (name.startsWith("_")) return;
-
     var lastRow = sheet.getLastRow();
     if (lastRow < DATA_START) { allData[name] = []; return; }
-
     var rows = sheet.getRange(DATA_START, 1, lastRow - DATA_START + 1, NCOLS).getValues();
     var tenants = [];
-
     rows.forEach(function(row) {
       if (!row[0] || String(row[0]).trim() === '') return;
       var fmtDate = function(v) {
@@ -59,18 +57,16 @@ function readAllData() {
         deposit: String(row[2]||""), rent: String(row[3]||""),
         dateJoining: fmtDate(row[4]), dateLeaving: fmtDate(row[5]),
         note: String(row[6]||""), monthly: {},
-        joiningRentAmt:      String(row[55]||""),  // BD
-        joiningRentHalfFull: String(row[56]||""),  // BE
-        joiningDepositPaid:  String(row[57]||""),  // BF
-        depositCollector:    String(row[58]||"")    // BG
+        joiningRentAmt:      String(row[55]||""),
+        joiningRentHalfFull: String(row[56]||""),
+        joiningDepositPaid:  String(row[57]||""),
+        depositCollector:    String(row[58]||"")
       };
       MONTHS.forEach(function(m, i) {
         var b = 7 + i*4;
         t.monthly[m] = {
-          amount:    String(row[b]  ||""),
-          halfFull:  String(row[b+1]||""),
-          collector: String(row[b+2]||""),
-          note:      String(row[b+3]||"")
+          amount: String(row[b]||""), halfFull: String(row[b+1]||""),
+          collector: String(row[b+2]||""), note: String(row[b+3]||"")
         };
       });
       tenants.push(t);
@@ -80,12 +76,11 @@ function readAllData() {
   return { success: true, data: allData };
 }
 
-// ── WRITE ─────────────────────────────────────────────────────
-// Rules:
-//   1. Never clearContent, never deleteRow, never insertRow
-//   2. Find tenant by name → update that row
-//   3. Not found → appendRow at bottom
-//   4. No formatting/color changes ever
+// ── WRITE — Maximum speed ─────────────────────────────────────
+// 1. ONE read call to get all existing names+rows
+// 2. Update existing rows in place (setValues only)
+// 3. New rows: appendRow + color only that row
+// 4. NO color loops over existing rows
 function writeData(pgData) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -94,7 +89,7 @@ function writeData(pgData) {
       var incoming = (pgData[pgName] || []).filter(function(t) {
         return t && t.name && String(t.name).trim() !== "";
       });
-      if (incoming.length === 0) return; // NEVER touch empty sheets
+      if (incoming.length === 0) return;
 
       var sheet = ss.getSheetByName(pgName);
       if (!sheet) sheet = ss.insertSheet(pgName);
@@ -102,35 +97,48 @@ function writeData(pgData) {
       if (sheet.getMaxColumns() < NCOLS)
         sheet.insertColumnsAfter(sheet.getMaxColumns(), NCOLS - sheet.getMaxColumns());
 
-      // Build name → row number map from existing data
-      var nameMap = {};
+      // ONE read call — get all names to build map
       var lastRow = sheet.getLastRow();
+      var nameMap = {}; // name → rowNum
+
       if (lastRow >= DATA_START) {
-        var nameVals = sheet.getRange(DATA_START, 1, lastRow - DATA_START + 1, 1).getValues();
-        nameVals.forEach(function(r, i) {
+        var nameCol = sheet.getRange(DATA_START, 1, lastRow - DATA_START + 1, 1).getValues();
+        nameCol.forEach(function(r, i) {
           var n = String(r[0]||"").trim().toLowerCase();
           if (n) nameMap[n] = DATA_START + i;
         });
       }
 
       incoming.forEach(function(t) {
-        var key    = String(t.name).trim().toLowerCase();
-        var isLeft = !!(t.dateLeaving && String(t.dateLeaving).trim() !== "");
+        var key   = String(t.name).trim().toLowerCase();
+        var dlStr = String(t.dateLeaving || "").trim();
+        var isLeft = !!(dlStr && dlStr !== "" && dlStr !== "null");
 
         if (nameMap[key]) {
-          // ── UPDATE: read existing row, merge, write back ──
+          // ── EXISTING: read that row, merge, write back ────
+          // Only reads/writes ONE row — fast
           var rowNum   = nameMap[key];
           var existing = sheet.getRange(rowNum, 1, 1, NCOLS).getValues()[0];
           sheet.getRange(rowNum, 1, 1, NCOLS).setValues([buildRow(t, existing, isLeft)]);
-          colorRow(sheet, rowNum, isLeft, NCOLS);
+          // NO color change for existing rows — keep as-is
 
         } else {
-          // ── NEW: append at bottom ─────────────────────────
+          // ── NEW TENANT: append + color only this row ─────
           var newRow = buildRow(t, new Array(NCOLS).fill(""), isLeft);
           sheet.appendRow(newRow);
           var newRowNum = sheet.getLastRow();
-          nameMap[key] = newRowNum;
-          colorRow(sheet, newRowNum, isLeft, NCOLS);
+          nameMap[key]  = newRowNum;
+
+          // Color only this new row (2 calls total)
+          try {
+            var range = sheet.getRange(newRowNum, 1, 1, NCOLS);
+            if (isLeft) {
+              range.setBackground('#1a1f2e').setFontColor('#64748b');
+            } else {
+              range.setBackground('#0d1f35').setFontColor('#e0f2fe');
+              sheet.getRange(newRowNum, 1).setFontColor('#bae6fd').setFontWeight('bold');
+            }
+          } catch(ce) {}
         }
       });
 
@@ -142,58 +150,70 @@ function writeData(pgData) {
   return { success: true, message: "Saved ✅" };
 }
 
-// ── Color rows by tenant status ─────────────────────────────
-// Active tenant = light blue tint, Left tenant = grey dim
-function colorRow(sheet, rowNum, isLeft, ncols) {
-  try {
-    var range = sheet.getRange(rowNum, 1, 1, ncols);
-    if (isLeft) {
-      // Left tenant: grey background, muted text
-      range.setBackground('#1a1f2e');
-      range.setFontColor('#64748b');
-    } else {
-      // Active tenant: light blue tint background
-      range.setBackground('#0d1f35');
-      range.setFontColor('#e0f2fe');
-      // Name column (col 1) brighter
-      sheet.getRange(rowNum, 1).setFontColor('#bae6fd').setFontWeight('bold');
-    }
-  } catch(e) {
-    // Ignore color errors — data is more important
-  }
-}
-
-// Merge incoming + existing. Blank incoming → keep existing value.
+// ── buildRow ──────────────────────────────────────────────────
 function buildRow(t, ex, isLeft) {
   function s(val, fallback) {
     var v = String(val||"").trim();
     return v !== "" ? v : String(fallback||"");
   }
   var note = String(t.note||"").trim() || String(ex[6]||"");
-  // Never add [LEFT] to note automatically
   note = note.replace(/\s*\[LEFT\]/gi, "").trim();
 
   var row = [
     s(t.name,ex[0]), s(t.contact,ex[1]), s(t.deposit,ex[2]), s(t.rent,ex[3]),
     s(t.dateJoining,ex[4]), s(t.dateLeaving,ex[5]), note
   ];
-
   MONTHS.forEach(function(m, i) {
     var b  = 7 + i*4;
-    var md = (t.monthly && t.monthly[m]) ? t.monthly[m] : {};
-    row.push(
-      s(md.amount,    ex[b]),
-      s(md.halfFull,  ex[b+1]),
-      s(md.collector, ex[b+2]),
-      s(md.note,      ex[b+3])
-    );
+    var md = (t.monthly && t.monthly[m]) || {};
+    row.push(s(md.amount,ex[b]), s(md.halfFull,ex[b+1]),
+             s(md.collector,ex[b+2]), s(md.note,ex[b+3]));
   });
-  // Cols 56-59 (BD,BE,BF,BG): joining payment info
   row.push(
-    s(t.joiningRentAmt,      ex[55]),  // BD: rent paid at joining
-    s(t.joiningRentHalfFull, ex[56]),  // BE: full/half
-    s(t.joiningDepositPaid,  ex[57]),  // BF: deposit paid at joining
-    s(t.depositCollector,    ex[58])   // BG: deposit collector
+    s(t.joiningRentAmt,      ex[55]),
+    s(t.joiningRentHalfFull, ex[56]),
+    s(t.joiningDepositPaid,  ex[57]),
+    s(t.depositCollector,    ex[58])
   );
   return row;
+}
+
+// ── Pending Tenants ───────────────────────────────────────────
+var PENDING_SHEET = '_PendingTenants';
+function getPendingTenants() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(PENDING_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return { success: true, pending: [] };
+  var rows = sheet.getRange(2,1,sheet.getLastRow()-1,10).getValues();
+  var pending = rows.map(function(r,i){
+    return { rowIndex:i+2, timestamp:String(r[0]||''), name:String(r[1]||''),
+      contact:String(r[2]||''), deposit:String(r[3]||''), rent:String(r[4]||''),
+      dateJoining:String(r[5]||''), pgName:String(r[6]||''), note:String(r[7]||''),
+      status:String(r[8]||'PENDING') };
+  }).filter(function(t){ return t.status==='PENDING' && t.name; });
+  return { success:true, pending:pending };
+}
+function approveTenant(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pending = ss.getSheetByName(PENDING_SHEET);
+  if (!pending) return { success:false, error:'No pending sheet' };
+  var row = pending.getRange(data.rowIndex,1,1,10).getValues()[0];
+  pending.getRange(data.rowIndex,9).setValue('APPROVED');
+  pending.getRange(data.rowIndex,10).setValue('Admin');
+  var pgName = data.pgName || String(row[6]||'');
+  var pgSheet = ss.getSheetByName(pgName);
+  if (!pgSheet) return { success:false, error:'PG not found: '+pgName };
+  var emptyM = []; MONTHS.forEach(function(){ emptyM.push('','','',''); });
+  var tRow = [String(row[1]||''),String(row[2]||''),String(row[3]||''),String(row[4]||''),
+    String(row[5]||''),'',String(row[7]||'')].concat(emptyM);
+  pgSheet.insertRowBefore(DATA_START);
+  pgSheet.getRange(DATA_START,1,1,tRow.length).setValues([tRow]);
+  return { success:true, message:String(row[1])+' added to '+pgName };
+}
+function rejectTenant(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pending = ss.getSheetByName(PENDING_SHEET);
+  if (!pending) return { success:false, error:'No pending sheet' };
+  pending.getRange(data.rowIndex,9).setValue('REJECTED');
+  return { success:true, message:'Rejected' };
 }
