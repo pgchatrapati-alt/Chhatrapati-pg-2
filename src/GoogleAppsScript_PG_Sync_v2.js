@@ -123,7 +123,10 @@ function writeData(pgData) {
           try { sheet.getRange(rn,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
         } else {
           if (sepRow > 0) {
-            // Insert before separator — stays in active section
+            // Shift all existing row refs >= sepRow down by 1
+            Object.keys(nameMap).forEach(function(k) {
+              if (nameMap[k] >= sepRow) nameMap[k]++;
+            });
             sheet.insertRowBefore(sepRow);
             sheet.getRange(sepRow,1,1,NCOLS).setValues([buildRow(t, new Array(NCOLS).fill(""), false)]);
             try { sheet.getRange(sepRow,1,1,7).setBackground('#0d1f35').setFontColor('#e0f2fe'); } catch(e){}
