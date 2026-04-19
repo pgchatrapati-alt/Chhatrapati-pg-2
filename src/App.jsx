@@ -876,17 +876,19 @@ export default function App() {
     const key = infoModal.name + infoModal.dateJoining;
     const updated = pgData[selectedPG].map(t => (t.name + t.dateJoining) === key ? updatedTenant : t);
     const newData = { ...pgData, [selectedPG]: updated };
-    setPgData(newData); setInfoModal(null);  // instant UI update
+    setPgData(newData); setInfoModal(null);
     showToast('✅ Saved!');
-    doPush(newData, true);  // background push, no await
+    // Send only changed PG — not all PGs (much faster)
+    doPush({ [selectedPG]: updated }, true);
   }
   async function savePay(updatedTenant) {
     const key = payModal.name + payModal.dateJoining;
     const updated = pgData[selectedPG].map(t => (t.name + t.dateJoining) === key ? updatedTenant : t);
     const newData = { ...pgData, [selectedPG]: updated };
-    setPgData(newData); setPayModal(null);  // instant UI update
+    setPgData(newData); setPayModal(null);
     showToast('✅ Payment saved!');
-    doPush(newData, true);  // background push
+    // Send only changed PG
+    doPush({ [selectedPG]: updated }, true);
   }
 
   async function addTenant() {
@@ -948,7 +950,7 @@ export default function App() {
     setNewTenant({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '', depositCollector: '' });
     setShowAddTenant(false);
     showToast('✅ ' + newTenant.name + ' added!', 'success');
-    doPush(newData, true);  // background push — UI instant
+    doPush({ [selectedPG]: [tenant, ...(pgData[selectedPG] || [])] }, true); // only this PG
   }
 
   if (!userRole) return <LoginScreen onLogin={r => setUserRole(r)} />;

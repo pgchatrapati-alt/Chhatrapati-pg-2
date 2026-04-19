@@ -111,7 +111,8 @@ function writeData(pgData) {
           var nr = sheet.getLastRow();
           nameMap[key] = nr;
           try {
-            var rng = sheet.getRange(nr, 1, 1, NCOLS);
+            // Color only first 7 cols (Name to Note) — fast
+            var rng = sheet.getRange(nr, 1, 1, 7);
             if (isLeft) { rng.setBackground('#1a1f2e').setFontColor('#64748b'); }
             else { rng.setBackground('#0d1f35').setFontColor('#e0f2fe'); }
           } catch(ce) {}
