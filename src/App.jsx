@@ -4,9 +4,9 @@ import { MONTHS, PG_COLORS, INITIAL_DATA, DEFAULT_WEB_APP_URL } from './data.js'
 import { useLocalStorage } from './useStorage.js';
 import { pushToSheets, pullFromSheets, pingSheet } from './sync.js';
 
-const COLLECTORS = ['Vishnu', 'Mahendra', 'Cash/other'];
+const COLLECTORS = ['Vishnu', 'Mahendra', 'Cash/other', 'Cash/Vijay', 'Cash/Parth'];
 const ADMIN_PASSWORD = 'admin123';
-const COLLECTOR_COLORS = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b' };
+const COLLECTOR_COLORS = { Vishnu: '#10b981', Mahendra: '#6366f1', 'Cash/other': '#f59e0b', 'Cash/Vijay': '#f97316', 'Cash/Parth': '#ec4899' };
 
 // Ye sheets PG tabs mein nahi dikhni chahiye (Sheet ke non-PG tabs)
 const EXCLUDED_SHEETS = ['Dashboard', 'Monthly_Calculation', '_meta'];
@@ -678,6 +678,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [syncStatus, setSyncStatus] = useState('idle');
   const [showAddTenant, setShowAddTenant] = useState(false);
+  const [previewTenant, setPreviewTenant] = useState(null); // preview before confirm
   const [infoModal, setInfoModal] = useState(null);
   const [payModal, setPayModal] = useState(null);
   const [newTenant, setNewTenant] = useState({ name: '', contact: '', deposit: '', rent: '', dateJoining: '', dateLeaving: '', note: '', joiningRentAmt: '', joiningRentHalfFull: '', joiningDepositPaid: '', joiningCollector: '', depositCollector: '' });
@@ -730,6 +731,14 @@ export default function App() {
   // Pull again after login
   useEffect(() => {
     if (userRole) doSilentPull();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole]);
+
+  // Auto-refresh every 10 seconds when logged in
+  useEffect(() => {
+    if (!userRole) return;
+    const interval = setInterval(() => doSilentPull(), 10000);
+    return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userRole]);
 
@@ -926,7 +935,7 @@ export default function App() {
       // This ensures rentPending filter works correctly (amount vs rent)
       // Rent only in amount — deposit goes in note separately
       monthly[joinMonthName] = {
-        amount:    String(joiningRent),   // ONLY rent
+        amount:    joiningRent > 0 ? String(joiningRent) : '',  // empty if 0
         halfFull:  newTenant.joiningRentHalfFull || (joiningRent >= fullRent ? 'Full' : 'Half'),
         collector: newTenant.joiningCollector || '',
         note:      joiningDeposit > 0
@@ -1340,9 +1349,22 @@ export default function App() {
                     )}
                   </div>
 
-                  <button onClick={addTenant}
+                  <button onClick={() => {
+                      // Validate first
+                      if (!newTenant.name.trim())         return showToast('Naam zaroor daalo', 'error');
+                      if (!newTenant.contact.trim())      return showToast('Contact number daalo', 'error');
+                      if (!newTenant.deposit)             return showToast('Deposit amount daalo', 'error');
+                      if (!newTenant.rent)                return showToast('Rent amount daalo', 'error');
+                      if (!newTenant.dateJoining)         return showToast('Date of Joining daalo', 'error');
+                      if (!newTenant.joiningRentAmt)      return showToast('Rent Paid daalo', 'error');
+                      if (!newTenant.joiningRentHalfFull) return showToast('Full/Half select karo', 'error');
+                      if (!newTenant.joiningCollector)    return showToast('Rent Collector select karo', 'error');
+                      if (!newTenant.joiningDepositPaid)  return showToast('Deposit Paid daalo', 'error');
+                      if (!newTenant.depositCollector)    return showToast('Deposit Collector select karo', 'error');
+                      setPreviewTenant({ ...newTenant }); // show preview
+                    }}
                     style={{ background: pgColor, border: 'none', color: '#fff', padding: '12px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>
-                    ✅ Add Tenant + Auto Sync
+                    👁 Preview & Confirm
                   </button>
                 </div>
               </div>
@@ -1451,6 +1473,60 @@ export default function App() {
       )}
 
       {/* Modals */}
+      {/* Preview Modal */}
+      {previewTenant && (
+        <div style={S.overlay} onClick={e => { if(e.target===e.currentTarget) setPreviewTenant(null); }}>
+          <div style={S.modal}>
+            <div style={{ width:36, height:4, background:'#334155', borderRadius:4, margin:'0 auto 14px' }}/>
+            <div style={{ fontWeight:800, fontSize:18, color:'#f1f5f9', marginBottom:4 }}>✅ Confirm New Tenant</div>
+            <div style={{ fontSize:12, color:'#64748b', marginBottom:14 }}>Data verify karo, phir confirm karo</div>
+
+            {/* Basic info */}
+            <div style={{ background:'#0a0f1e', borderRadius:10, padding:'12px', marginBottom:10 }}>
+              <div style={{ fontSize:11, color:'#64748b', fontWeight:700, marginBottom:8, textTransform:'uppercase' }}>Basic Info</div>
+              {[
+                ['Naam', previewTenant.name],
+                ['Contact', previewTenant.contact],
+                ['Deposit', '₹' + fmtNum(previewTenant.deposit)],
+                ['Rent/mo', '₹' + fmtNum(previewTenant.rent)],
+                ['Date Joining', fmtDate(previewTenant.dateJoining)],
+                previewTenant.dateLeaving ? ['Date Leaving', fmtDate(previewTenant.dateLeaving)] : null,
+                previewTenant.note ? ['Note', previewTenant.note] : null,
+              ].filter(Boolean).map(([k,v]) => (
+                <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', borderBottom:'1px solid #1e293b' }}>
+                  <span style={{ fontSize:12, color:'#64748b' }}>{k}</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:'#e0f2fe' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Joining payment */}
+            <div style={{ background:'#0a0f1e', borderRadius:10, padding:'12px', marginBottom:14 }}>
+              <div style={{ fontSize:11, color:'#64748b', fontWeight:700, marginBottom:8, textTransform:'uppercase' }}>Joining Payment</div>
+              {[
+                ['Rent Paid', '₹' + fmtNum(previewTenant.joiningRentAmt) + ' (' + previewTenant.joiningRentHalfFull + ')'],
+                ['Rent Collector', previewTenant.joiningCollector],
+                ['Deposit Paid', '₹' + fmtNum(previewTenant.joiningDepositPaid)],
+                ['Deposit Collector', previewTenant.depositCollector],
+              ].map(([k,v]) => (
+                <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', borderBottom:'1px solid #1e293b' }}>
+                  <span style={{ fontSize:12, color:'#64748b' }}>{k}</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:'#22c55e' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={() => { setPreviewTenant(null); addTenant(); }}
+                style={{ flex:1, background:'#22c55e', border:'none', color:'#fff', padding:'13px', borderRadius:10, cursor:'pointer', fontWeight:800, fontSize:15 }}>
+                ✅ Confirm + Add
+              </button>
+              <button onClick={() => setPreviewTenant(null)} style={S.ghostBtn}>Edit</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {infoModal && <TenantInfoModal tenant={infoModal} selectedPG={selectedPG} pgColor={pgColor} isAdmin={isAdmin} onClose={() => setInfoModal(null)} onSave={saveInfo} />}
       {payModal && <TenantPaymentModal tenant={payModal} selectedPG={selectedPG} pgColor={pgColor} onClose={() => setPayModal(null)} onSave={savePay} focusMonth={selectedMonth} />}
 
