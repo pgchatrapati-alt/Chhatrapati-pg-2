@@ -3,7 +3,7 @@
 // Ek baar set karne ke baad viewer ko URL daalni nahi padegi
 // Apps Script → Deploy → Web App → URL copy karo
 // ─────────────────────────────────────────────────────────────
-export const DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx9WaB48EsbbR1wDoOHjhopeDX-UB5IouQlWChIAIzcP9T7U4LOQp-aWVy6NNaW4Xr0/exec';
+export const DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbz9v36A_-lScJFUpastgOC8cI33sPb6-1FHTk8AyuNOCBlX6NRdCWcRyjAA3skSTGuXbg/exec';
 // Example: export const DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/ABC.../exec';
 
 export const MONTHS = [
